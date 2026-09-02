@@ -6,10 +6,13 @@ from pathlib import Path
 
 import pytest
 
-# Configure the app environment before any app module is imported.
+# Configure the app environment before any app module is imported. Real env
+# vars win over the developer's .env file, so pin everything the suite depends
+# on — otherwise a local .env (e.g. TRANSCRIBE_ENABLED=0) breaks tests.
 _TMP = tempfile.mkdtemp(prefix="cutlass-test-")
 os.environ["DRY_RUN"] = "1"
 os.environ["CUTLASS_DATA"] = _TMP
+os.environ["TRANSCRIBE_ENABLED"] = "1"
 
 from fastapi.testclient import TestClient  # noqa: E402
 

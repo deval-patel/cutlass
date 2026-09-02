@@ -4,3 +4,7 @@ node_modules/
 dist/
 __pycache__/
 *.pyc
+
+# Local secrets — never commit
+.env
+backend/.env

@@ -26,11 +26,25 @@ AI video editor — upload a video, a multimodal model drafts the first cut for 
 
 Requires Python 3.11+, ffmpeg on PATH, Node 20+.
 
+### Local configuration
+
+Copy the template and drop in your key:
+
+```bash
+cp .env.example .env   # .env is gitignored — never committed
+```
+
+The backend loads `.env` from the repo root on startup; real environment
+variables always take precedence over the file. All options are documented in
+[.env.example](.env.example) — model endpoint, vision/text models,
+transcription, sampling, and size limits. Without a key, `DRY_RUN=1` runs the
+whole pipeline with stubbed model calls.
+
 ```bash
 # Backend
 cd backend
 pip install -r requirements.txt
-GLM_API_KEY=sk-... uvicorn app.main:app --reload
+uvicorn app.main:app --reload
 
 # Frontend (separate terminal)
 cd frontend
@@ -39,7 +53,7 @@ npm run dev
 # open http://localhost:5173
 ```
 
-No API key? Develop without credits:
+No API key at all?
 
 ```bash
 DRY_RUN=1 uvicorn app.main:app --reload
@@ -79,6 +93,8 @@ frontend is served by FastAPI — the same path the Docker container runs.
 
 ```bash
 docker build -t cutlass .
-docker run -p 8000:8000 -v cutlass-data:/data -e GLM_API_KEY=sk-... cutlass
+docker run -p 8000:8000 -v cutlass-data:/data --env-file .env cutlass
 # open http://localhost:8000
 ```
+
+The image never bakes in `.env`; credentials enter only via `--env-file`/`-e`.

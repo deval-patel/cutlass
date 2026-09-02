@@ -1,7 +1,25 @@
 import os
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+
+def _apply_dotenv(path: Path) -> None:
+    """Load KEY=VALUE pairs from a .env file into the environment.
+
+    Real environment variables always win, so CI/exported vars are never
+    shadowed by a local file.
+    """
+    if path.exists():
+        load_dotenv(dotenv_path=path, override=False)
+
+
+# Repo-root .env is canonical; backend/.env is a fallback for repo-layouts
+# that keep everything under backend/.
+_apply_dotenv(BASE_DIR.parent / ".env")
+_apply_dotenv(BASE_DIR / ".env")
 
 # DRY_RUN=1 stubs the model with a heuristic EDL so the pipeline can be
 # developed without spending API credits.
