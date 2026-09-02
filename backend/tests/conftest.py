@@ -14,14 +14,21 @@ os.environ["DRY_RUN"] = "1"
 os.environ["CUTLASS_DATA"] = _TMP
 os.environ["TRANSCRIBE_ENABLED"] = "1"
 
-from fastapi.testclient import TestClient  # noqa: E402
+from fastapi.testclient import TestClient
 
-from app.main import app  # noqa: E402
+from app.main import app
 
-pytestmark = pytest.mark.skipif(
-    shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None,
-    reason="ffmpeg/ffprobe not on PATH",
-)
+FFMPEG_MISSING = shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None
+
+
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    # pytestmark in conftest.py does not propagate to test modules, so skip
+    # via the collection hook instead: without ffmpeg the pipeline tests
+    # can't run and should skip, not error out at fixture setup.
+    if FFMPEG_MISSING:
+        skip = pytest.mark.skip(reason="ffmpeg/ffprobe not on PATH")
+        for item in items:
+            item.add_marker(skip)
 
 
 @pytest.fixture(scope="session")
@@ -30,10 +37,24 @@ def test_video() -> Path:
     path = Path(_TMP) / "test_video.mp4"
     subprocess.run(
         [
-            "ffmpeg", "-y", "-v", "error",
-            "-f", "lavfi", "-i", "testsrc=duration=10:size=640x360:rate=24",
-            "-f", "lavfi", "-i", "sine=frequency=440:duration=10",
-            "-c:v", "libx264", "-c:a", "aac", "-pix_fmt", "yuv420p",
+            "ffmpeg",
+            "-y",
+            "-v",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc=duration=10:size=640x360:rate=24",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:duration=10",
+            "-c:v",
+            "libx264",
+            "-c:a",
+            "aac",
+            "-pix_fmt",
+            "yuv420p",
             str(path),
         ],
         check=True,
@@ -57,6 +78,7 @@ def client():
 
 def wait_for_status(client: TestClient, job_id: str, statuses: set[str], timeout_s: float = 60):
     import time
+
     deadline = time.time() + timeout_s
     while time.time() < deadline:
         job = client.get(f"/api/jobs/{job_id}").json()
