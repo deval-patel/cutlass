@@ -1,4 +1,5 @@
 """Unit tests for GLM provider response parsing — no network needed."""
+
 import pytest
 
 from app.models import FrameNote, Segment
@@ -11,6 +12,7 @@ def provider():
     class _NoInit(GLMProvider):
         def __init__(self):
             pass
+
     return _NoInit()
 
 
@@ -24,7 +26,7 @@ def test_extract_json_in_code_fence():
 
 
 def test_extract_json_with_surrounding_prose():
-    raw = 'Here is the result: [1, 2, 3] hope that helps!'
+    raw = "Here is the result: [1, 2, 3] hope that helps!"
     assert _extract_json(raw) == [1, 2, 3]
 
 
@@ -75,7 +77,9 @@ def test_select_segments_clamps_and_filters(provider, monkeypatch):
                  {"start_s": 50, "end_s": 999, "reason": "clamp end", "confidence": 0.8}]'
 
     monkeypatch.setattr(provider, "_chat", fake_chat)
-    notes = [FrameNote(timestamp_s=float(i), description=f"note {i}", label="core") for i in range(10)]
+    notes = [
+        FrameNote(timestamp_s=float(i), description=f"note {i}", label="core") for i in range(10)
+    ]
     segments = provider.select_segments(notes, total_duration_s=60.0)
 
     assert [(s.start_s, s.end_s) for s in segments] == [(0.0, 10.0), (50.0, 60.0)]

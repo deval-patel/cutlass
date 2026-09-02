@@ -10,21 +10,26 @@ def test_rejects_non_video_extension(client):
 
 
 def test_rejects_garbage_video_content(client):
-    res = client.post("/api/upload", files={
-        "video": ("fake.mp4", io.BytesIO(b"this is definitely not a video" * 100)),
-    })
+    res = client.post(
+        "/api/upload",
+        files={
+            "video": ("fake.mp4", io.BytesIO(b"this is definitely not a video" * 100)),
+        },
+    )
     assert res.status_code == 400
     assert "video" in res.json()["detail"].lower()
 
 
 def test_rejects_oversized_upload(client, test_video, monkeypatch):
     from app import config
+
     monkeypatch.setattr(config, "MAX_UPLOAD_BYTES", 1000)  # 1KB — test clip is bigger
     data = test_video.read_bytes()
     res = client.post("/api/upload", files={"video": ("big.mp4", io.BytesIO(data))})
     assert res.status_code == 413
     # Partial file must not linger in uploads.
     import os
+
     uploads = os.path.join(os.environ["CUTLASS_DATA"], "uploads")
     assert os.listdir(uploads) == []
 

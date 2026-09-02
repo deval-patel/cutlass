@@ -46,8 +46,14 @@ def test_env_example_is_committed_template():
     assert example.exists(), ".env.example must exist as the committed template"
     values = dotenv_values(example)
     keys = set(values)
-    for required in ("GLM_API_KEY", "MODEL_BASE_URL", "VISION_MODEL",
-                     "TEXT_MODEL", "TRANSCRIBE_ENABLED", "DRY_RUN"):
+    for required in (
+        "GLM_API_KEY",
+        "MODEL_BASE_URL",
+        "VISION_MODEL",
+        "TEXT_MODEL",
+        "TRANSCRIBE_ENABLED",
+        "DRY_RUN",
+    ):
         assert required in keys, f"{required} missing from .env.example"
 
 
@@ -56,7 +62,9 @@ def test_local_env_is_gitignored():
 
     result = subprocess.run(
         ["git", "check-ignore", "-v", ".env"],
-        cwd=REPO_ROOT, capture_output=True, text=True,
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
     )
     assert result.returncode == 0, ".env is NOT covered by .gitignore"
     assert ".gitignore" in result.stdout

@@ -1,9 +1,9 @@
 """The Docker container serves the built frontend from FastAPI — this exercises
 that exact path (skipped when frontend/dist hasn't been built)."""
+
 from pathlib import Path
 
 import pytest
-
 from conftest import upload_and_wait, wait_for_status
 
 DIST = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
@@ -21,6 +21,7 @@ def test_index_and_assets_served(client):
 def test_bundled_asset_reachable(client):
     index = client.get("/").text
     import re
+
     match = re.search(r'src="/(assets/[^"]+\.js)"', index)
     assert match, "no script bundle referenced in index.html"
     js = client.get("/" + match.group(1))

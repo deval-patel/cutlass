@@ -1,5 +1,3 @@
-import time
-
 from conftest import upload_and_wait, wait_for_status
 
 
@@ -15,11 +13,14 @@ def test_update_segments_normalizes_and_invalidates_render(client, test_video):
     job_id = job["id"]
 
     # Edit while in ready state: overlapping/out-of-range input gets normalized.
-    res = client.put(f"/api/jobs/{job_id}/segments", json=[
-        {"start_s": 100.0, "end_s": 500.0, "reason": "clamp me", "confidence": 1.0},
-        {"start_s": 2.0, "end_s": 4.0, "reason": "keep", "confidence": 0.9},
-        {"start_s": 3.5, "end_s": 5.0, "reason": "overlap", "confidence": 0.9},
-    ])
+    res = client.put(
+        f"/api/jobs/{job_id}/segments",
+        json=[
+            {"start_s": 100.0, "end_s": 500.0, "reason": "clamp me", "confidence": 1.0},
+            {"start_s": 2.0, "end_s": 4.0, "reason": "keep", "confidence": 0.9},
+            {"start_s": 3.5, "end_s": 5.0, "reason": "overlap", "confidence": 0.9},
+        ],
+    )
     assert res.status_code == 200, res.text
     updated = res.json()
     got = [(s["start_s"], s["end_s"]) for s in updated["segments"]]
@@ -39,9 +40,12 @@ def test_edit_lifecycle_with_render(client, test_video):
     assert job["has_render"] is True
 
     # Editing after render invalidates the stale output.
-    res = client.put(f"/api/jobs/{job_id}/segments", json=[
-        {"start_s": 1.0, "end_s": 8.0, "reason": "manual", "confidence": 1.0},
-    ])
+    res = client.put(
+        f"/api/jobs/{job_id}/segments",
+        json=[
+            {"start_s": 1.0, "end_s": 8.0, "reason": "manual", "confidence": 1.0},
+        ],
+    )
     assert res.status_code == 200
     updated = res.json()
     assert updated["status"] == "ready"
@@ -62,9 +66,12 @@ def test_edit_lifecycle_with_render(client, test_video):
 def test_edit_rejects_empty_result(client, test_video):
     job = upload_and_wait(client, test_video)
     job_id = job["id"]
-    res = client.put(f"/api/jobs/{job_id}/segments", json=[
-        {"start_s": 5.0, "end_s": 5.0, "reason": "empty", "confidence": 1.0},
-    ])
+    res = client.put(
+        f"/api/jobs/{job_id}/segments",
+        json=[
+            {"start_s": 5.0, "end_s": 5.0, "reason": "empty", "confidence": 1.0},
+        ],
+    )
     assert res.status_code == 422
 
 
