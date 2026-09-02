@@ -1,41 +1,19 @@
-import contextlib
 import json
 import sqlite3
 from collections.abc import Sequence
 from typing import Any, cast
 
-from .config import DB_PATH
+from .db import connections, migrations
 from .models import FrameNote, JobStatus, JobStatusValue, Segment, TranscriptLine, VideoMeta
-
-_SCHEMA = """
-CREATE TABLE IF NOT EXISTS jobs (
-    id TEXT PRIMARY KEY,
-    filename TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'uploaded',
-    error TEXT,
-    meta TEXT,
-    segments TEXT,
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    progress TEXT,
-    notes TEXT,
-    transcript TEXT
-);
-"""
 
 
 def _connect() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
+    return connections.connect()
 
 
 def init_db() -> None:
-    with _connect() as conn:
-        conn.execute(_SCHEMA)
-        # Migrate DBs created before these columns existed.
-        for col in ("progress", "notes", "transcript"):
-            with contextlib.suppress(sqlite3.OperationalError):  # column already present
-                conn.execute(f"ALTER TABLE jobs ADD COLUMN {col} TEXT")
+    """Create/upgrade the schema. Delegates to the migration runner (ADR-0003)."""
+    migrations.ensure_current()
 
 
 def _row_to_job(row: sqlite3.Row) -> JobStatus:

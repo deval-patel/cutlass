@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import storage
+from .db import migrations
 from .routers import videos
 
 logging.basicConfig(level=logging.INFO)
@@ -18,7 +18,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-storage.init_db()
+migrations.ensure_current()
 app.include_router(videos.router)
 
 
