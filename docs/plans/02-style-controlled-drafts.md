@@ -1,6 +1,20 @@
 # Plan 2 — Style-Controlled AI Drafts
 
-**Status: in-progress (started Sept 2026).** First feature project after Plan 1. Research basis: [`editing-style-techniques.md`](../research/editing-style-techniques.md).
+**Status: ✅ core implemented (Sept 2026); two sub-features deferred — see the audit below.** First feature project after Plan 1. Research basis: [`editing-style-techniques.md`](../research/editing-style-techniques.md).
+
+## Implementation audit (Sept 2026)
+
+**Acceptance criteria — how each was verified:**
+- Same footage, two presets → measurably different drafts: `test_redraft.py` (segment-count and avg-length differences on a 30-min synthetic; IoU checked). Live-model differentiation rides on the same prompt + enforcement path.
+- Brief reflected, injection-proof: adversarial-brief test — the brief rides in the style block, bound by a fixed-format rule, and the stored draft stays a constraint-clean segment list regardless.
+- Hard constraints hold even when the model ignores them: property tests (120 randomized messy drafts × 6 presets) via `violates_hard_constraints`; the oracle caught a real bug during development (gap-span inflation on folds).
+- Re-draft without vision calls: counting-provider test proves zero `analyze_frames` calls during redraft.
+- Golden regression in CI: `tests/test_golden.py` replays recorded responses through coercion + enforcement vs hand-approved cuts (IoU/avg-segment assertions; retention reported, not asserted — enforcement can't fix retention, only the model can).
+
+**Deferred (honest gaps):**
+1. **Word-level timestamps + shot-boundary detection** (task 5): `cut_on: "word"/"shot"` currently degrade to sentence-boundary snapping. Word timestamps need `timestamp_granularities` support in the transcribe endpoint or a WhisperX pass; shot boundaries need PySceneDetect/TransNetV2 (new dependency — schedule with Plan 5's local models).
+2. **Real-footage golden fixtures**: the replay mechanism ships with one synthetic fixture; real fixtures need your footage + hand-approved cuts (record via `scripts/eval_drafts.py`).
+3. **Upload-page style gallery**: style fields exist on both upload APIs; the gallery UI currently lives on the project page (re-draft), which is the primary flow.
 
 ## Goal
 

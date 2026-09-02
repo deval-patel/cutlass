@@ -1,0 +1,61 @@
+{
+  "description": "Representative recorded model response: a 10-minute talking-head + B-roll video where the model over-kept, produced one over-long segment, and left boundary noise. Replay this through coercion + enforcement and compare against the hand-approved golden cut \u2014 a prompt-template change that shifts selection semantics shows up as an IoU/pacing regression in CI.",
+  "source_duration_s": 600,
+  "style": "vlog",
+  "transcript": [
+    {
+      "start_s": 12.0,
+      "end_s": 121.0,
+      "text": "intro to the trip and the first market walk"
+    },
+    {
+      "start_s": 121.0,
+      "end_s": 236.0,
+      "text": "temple visit with narration"
+    },
+    {
+      "start_s": 236.0,
+      "end_s": 348.0,
+      "text": "food street tour, tasting everything"
+    },
+    {
+      "start_s": 348.0,
+      "end_s": 471.0,
+      "text": "sunset lookout, reflections on the day"
+    },
+    {
+      "start_s": 471.0,
+      "end_s": 600.0,
+      "text": "closing thoughts and tomorrow's plan"
+    }
+  ],
+  "recorded_response": "[{\"start_s\": 8.0, \"end_s\": 250.0, \"reason\": \"market + temple, mostly good\", \"confidence\": 0.8}, {\"start_s\": 240.5, \"end_s\": 355.0, \"reason\": \"food street overlap\", \"confidence\": 0.7}, {\"start_s\": 361.0, \"end_s\": 592.0, \"reason\": \"sunset + closing\", \"confidence\": 0.85}, {\"start_s\": 596.0, \"end_s\": 598.0, \"reason\": \"stray blip the model should not have kept\", \"confidence\": 0.3}]",
+  "golden_cut": [
+    {
+      "start_s": 12.0,
+      "end_s": 236.0,
+      "reason": "market + temple",
+      "confidence": 1.0
+    },
+    {
+      "start_s": 236.0,
+      "end_s": 348.0,
+      "reason": "food street",
+      "confidence": 1.0
+    },
+    {
+      "start_s": 361.0,
+      "end_s": 592.0,
+      "reason": "sunset + closing",
+      "confidence": 1.0
+    }
+  ],
+  "expectations": {
+    "min_selection_iou": 0.85,
+    "max_avg_segment_s": 130.0,
+    "info_retention_range": [
+      0.6,
+      0.95
+    ]
+  }
+}
