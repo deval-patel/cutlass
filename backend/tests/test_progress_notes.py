@@ -18,25 +18,27 @@ def test_ready_job_has_frame_notes(client, test_video):
 
 
 def test_progress_roundtrip_and_migration(client):
-    from app import storage
+    from app.db import migrations
+    from app.repositories import jobs
 
-    # init_db must be idempotent and tolerate pre-existing schemas.
-    storage.init_db()
-    storage.init_db()
+    # Migrations must be idempotent and tolerate pre-existing schemas.
+    migrations.ensure_current()
+    migrations.ensure_current()
 
-    storage.create_job("prog1", "x.mp4")
-    storage.set_progress("prog1", "analyzing chunk 2/5")
-    job = storage.get_job("prog1")
-    assert job.progress == "analyzing chunk 2/5"
+    jobs.create_job("prog1", "x.mp4")
+    jobs.set_progress("prog1", "analyzing chunk 2/5")
+    job = jobs.get_job("prog1")
+    assert job is not None and job.progress == "analyzing chunk 2/5"
 
-    storage.set_notes(
+    jobs.set_notes(
         "prog1",
         [
             {"timestamp_s": 1.0, "description": "hello", "label": "core"},
         ],
     )
-    job = storage.get_job("prog1")
-    assert job.frame_notes[0].description == "hello"
+    job = jobs.get_job("prog1")
+    assert job is not None and job.frame_notes[0].description == "hello"
 
-    storage.set_progress("prog1", None)
-    assert storage.get_job("prog1").progress is None
+    jobs.set_progress("prog1", None)
+    refreshed = jobs.get_job("prog1")
+    assert refreshed is not None and refreshed.progress is None

@@ -6,8 +6,9 @@ from typing import Any
 from fastapi import APIRouter, BackgroundTasks, Body, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 
-from .. import config, storage
+from .. import config
 from ..models import JobStatus, Segment
+from ..repositories import jobs as jobs_repo
 from ..services import analyzer, ffmpeg
 from ..services.edl import normalize_segments
 
@@ -19,7 +20,7 @@ _FRAME_NAME = re.compile(r"^frame_\d{6}\.jpg$")
 
 
 def _job_payload(job_id: str) -> JobStatus:
-    job = storage.get_job(job_id)
+    job = jobs_repo.get_job(job_id)
     if job is None:
         raise HTTPException(404, "job not found")
     job.has_render = analyzer.render_path(job_id).exists()
@@ -60,14 +61,14 @@ async def upload(background: BackgroundTasks, video: UploadFile = File(...)) -> 
         target.unlink(missing_ok=True)
         raise HTTPException(400, "file could not be read as a video (ffprobe failed)") from exc
 
-    storage.create_job(job_id, video.filename or "video.mp4")
+    jobs_repo.create_job(job_id, video.filename or "video.mp4")
     background.add_task(analyzer.run_pipeline, job_id)
     return {"id": job_id}
 
 
 @router.get("/jobs")
 def list_jobs() -> list[dict[str, Any]]:
-    jobs = storage.list_jobs()
+    jobs = jobs_repo.list_jobs()
     for job in jobs:
         job.has_render = analyzer.render_path(job.id).exists()
     return [
@@ -99,17 +100,17 @@ def update_segments(job_id: str, segments: list[Segment] = Body(...)) -> JobStat
     normalized = normalize_segments(segments, job.meta.duration_s)
     if not normalized:
         raise HTTPException(422, "no valid segments after normalization")
-    storage.set_segments(job_id, normalized)
+    jobs_repo.set_segments(job_id, normalized)
     render = analyzer.render_path(job_id)
     if render.exists():
         render.unlink()
-    storage.set_status(job_id, "ready")
+    jobs_repo.set_status(job_id, "ready")
     return _job_payload(job_id)
 
 
 @router.get("/jobs/{job_id}/frames")
 def list_frames(job_id: str) -> list[dict[str, Any]]:
-    if storage.get_job(job_id) is None:
+    if jobs_repo.get_job(job_id) is None:
         raise HTTPException(404, "job not found")
     return analyzer.frames_manifest(job_id)
 
@@ -142,7 +143,7 @@ def get_render(job_id: str) -> FileResponse:
 
 @router.post("/jobs/{job_id}/render")
 def start_render(job_id: str, background: BackgroundTasks) -> dict[str, str]:
-    if storage.get_job(job_id) is None:
+    if jobs_repo.get_job(job_id) is None:
         raise HTTPException(404, "job not found")
     if analyzer.render_path(job_id).exists():
         return {"status": "already rendered"}
