@@ -69,3 +69,56 @@ describe('JobView', () => {
     ).toBe(1)
   })
 })
+
+class FakeEventSource {
+  static instances: FakeEventSource[] = []
+  onmessage: ((ev: { data: string }) => void) | null = null
+  onerror: (() => void) | null = null
+  closed = false
+
+  constructor(public url: string) {
+    FakeEventSource.instances.push(this)
+  }
+
+  close() {
+    this.closed = true
+  }
+
+  emit(data: unknown) {
+    this.onmessage?.({ data: JSON.stringify(data) })
+  }
+}
+
+describe('JobView over SSE', () => {
+  beforeEach(() => {
+    FakeEventSource.instances = []
+    vi.stubGlobal('EventSource', FakeEventSource)
+    vi.stubGlobal('fetch', installFetch(readyJob))
+  })
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('subscribes to the events stream, patches live state, closes on terminal', async () => {
+    render(<JobView jobId="abc123" onReset={() => {}} />)
+
+    // Full payload arrives via the initial fetch; the stream is subscribed.
+    await screen.findByText(/opening scene/)
+    expect(FakeEventSource.instances.length).toBe(1)
+    expect(FakeEventSource.instances[0].url).toBe('/api/jobs/abc123/events')
+
+    // A terminal event closes the stream and refetches the full payload.
+    const source = FakeEventSource.instances[0]
+    source.emit({ status: 'ready', progress: null, error: null })
+    expect(source.closed).toBe(true)
+    expect(await screen.findByText(/main content/)).toBeTruthy()
+  })
+
+  it('falls back to polling when the stream errors mid-flight', async () => {
+    render(<JobView jobId="abc123" onReset={() => {}} />)
+    await screen.findByText(/opening scene/)
+
+    const source = FakeEventSource.instances[0]
+    source.onerror?.()
+    // The fallback loop takes over; the ready job renders via polling too.
+    expect(await screen.findByText(/main content/)).toBeTruthy()
+  })
+})

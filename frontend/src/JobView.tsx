@@ -20,22 +20,43 @@ export default function JobView({ jobId, onReset }: JobViewProps) {
   const [watchingRender, setWatchingRender] = useState(false)
   const videoRef = useRef<HTMLVideoElement | null>(null)
 
-  // Poll job status until it reaches a terminal state. Transient fetch
-  // failures keep retrying instead of silently freezing the UI; a missing
-  // job stops the loop with an explicit error.
+  // Track job status: prefer SSE events (live status/progress without
+  // polling); fall back to the polling loop when EventSource is missing or
+  // the stream errors. Either way the full payload is fetched once up front
+  // and again on terminal (segments/transcript only settle then).
   useEffect(() => {
     let cancelled = false
     let timer: number | undefined
+    let terminal = false
+    let fullFetchDone = false
+
+    async function fetchJob(): Promise<JobStatus | null> {
+      const res = await fetch(`/api/jobs/${jobId}`)
+      if (res.status === 404) {
+        if (!cancelled) setLoadError('Job not found')
+        return null
+      }
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      return (await res.json()) as JobStatus
+    }
+
+    async function refreshOnce() {
+      try {
+        const data = await fetchJob()
+        if (cancelled || data === null) return
+        fullFetchDone = true
+        setLoadError(null)
+        setJob(data)
+      } catch {
+        // Leave transport to the fallback loop / SSE handlers.
+      }
+    }
+
     async function poll() {
       try {
-        const res = await fetch(`/api/jobs/${jobId}`)
-        if (res.status === 404) {
-          if (!cancelled) setLoadError('Job not found')
-          return
-        }
-        if (!res.ok) throw new Error(`HTTP ${res.status}`)
-        const data: JobStatus = await res.json()
-        if (cancelled) return
+        const data = await fetchJob()
+        if (cancelled || data === null) return
+        fullFetchDone = true
         setLoadError(null)
         setJob(data)
         if (!TERMINAL.includes(data.status)) timer = window.setTimeout(poll, POLL_MS)
@@ -46,9 +67,56 @@ export default function JobView({ jobId, onReset }: JobViewProps) {
         }
       }
     }
-    void poll()
+
+    function startPolling() {
+      if (cancelled || terminal) return
+      source?.close()
+      if (timer !== undefined) clearTimeout(timer)
+      timer = window.setTimeout(poll, 0)
+    }
+
+    let source: EventSource | undefined
+    if (typeof EventSource !== 'undefined') {
+      source = new EventSource(`/api/jobs/${jobId}/events`)
+      source.onmessage = (ev) => {
+        let data: { status: JobStatusValue; progress: string | null; error: string | null }
+        try {
+          data = JSON.parse(ev.data)
+        } catch {
+          startPolling()
+          return
+        }
+        if (cancelled) return
+        if (TERMINAL.includes(data.status)) {
+          terminal = true
+          source?.close()
+          void refreshOnce()
+          return
+        }
+        if (!fullFetchDone) {
+          void refreshOnce()
+          return
+        }
+        setLoadError(null)
+        setJob((prev) =>
+          prev
+            ? { ...prev, status: data.status, progress: data.progress, error: data.error }
+            : prev,
+        )
+      }
+      source.onerror = () => {
+        // The stream closes itself on terminal; any other error means it is
+        // unusable — drop to polling (which also handles 404s).
+        if (!terminal) startPolling()
+      }
+      void refreshOnce()
+    } else {
+      startPolling()
+    }
+
     return () => {
       cancelled = true
+      source?.close()
       if (timer !== undefined) clearTimeout(timer)
     }
   }, [jobId])
