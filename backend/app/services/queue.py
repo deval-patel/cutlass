@@ -15,7 +15,7 @@ from collections.abc import Callable, Mapping
 from typing import Literal
 
 from .. import config
-from ..repositories import jobs as jobs_repo
+from ..repositories import assets as assets_repo
 
 logger = logging.getLogger(__name__)
 
@@ -85,12 +85,12 @@ class JobQueue:
     def recover_pending(self) -> list[tuple[TaskKind, str]]:
         """Re-enqueue work stranded by a crash/restart. Returns what was queued."""
         recovered: list[tuple[TaskKind, str]] = []
-        for job in jobs_repo.list_jobs():
-            kind = _RECOVERY.get(job.status)
+        for asset in assets_repo.list_assets():
+            kind = _RECOVERY.get(asset.status)
             if kind is not None:
-                logger.info("recovering job %s (%s) as %s", job.id, job.status, kind)
-                self.enqueue(kind, job.id)
-                recovered.append((kind, job.id))
+                logger.info("recovering asset %s (%s) as %s", asset.id, asset.status, kind)
+                self.enqueue(kind, asset.id)
+                recovered.append((kind, asset.id))
         return recovered
 
     def _run(self) -> None:

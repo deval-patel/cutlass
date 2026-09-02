@@ -7,18 +7,20 @@ reliably produces 'database is locked' under load.
 
 import threading
 
-from app.repositories import jobs
+from app.repositories import assets as assets_repo
+from app.repositories import projects as projects_repo
 
 
 def test_concurrent_writes_never_lock(client):
-    jobs.create_job("conc1", "x.mp4")
+    projects_repo.create_project("proj-conc", "x.mp4")
+    assets_repo.create_asset("conc1", "proj-conc", "x.mp4")
     errors: list[Exception] = []
 
     def hammer() -> None:
         try:
             for i in range(25):
-                jobs.set_progress("conc1", f"tick {i}")
-                jobs.set_status("conc1", "analyzing")
+                assets_repo.set_progress("conc1", f"tick {i}")
+                assets_repo.set_status("conc1", "analyzing")
         except Exception as exc:  # noqa: BLE001 — record any failure to assert after join
             errors.append(exc)
 
@@ -29,6 +31,6 @@ def test_concurrent_writes_never_lock(client):
         t.join()
 
     assert errors == []
-    job = jobs.get_job("conc1")
-    assert job is not None
-    assert job.progress is not None and job.progress.startswith("tick")
+    asset = assets_repo.get_asset("conc1")
+    assert asset is not None
+    assert asset.progress is not None and asset.progress.startswith("tick")

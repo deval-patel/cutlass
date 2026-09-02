@@ -13,7 +13,8 @@ import threading
 import time
 
 from app.events import get_broker
-from app.repositories import jobs
+from app.repositories import assets as assets_repo
+from app.repositories import projects as projects_repo
 from app.routers.videos import job_events
 
 
@@ -22,9 +23,14 @@ def _parse_events(raw: str) -> list[dict[str, str | None]]:
     return [json.loads(ln[len("data: ") :]) for ln in lines]
 
 
+def _seed_asset(asset_id: str, status: str) -> None:
+    projects_repo.create_project(f"proj-{asset_id}", "x.mp4")
+    assets_repo.create_asset(asset_id, f"proj-{asset_id}", "x.mp4")
+    assets_repo.set_status(asset_id, status)
+
+
 def test_events_sync_and_close_for_terminal_job(client):
-    jobs.create_job("evt-ready", "x.mp4")
-    jobs.set_status("evt-ready", "ready")
+    _seed_asset("evt-ready", "ready")
 
     with client.stream("GET", "/api/jobs/evt-ready/events") as response:
         assert response.status_code == 200
@@ -36,8 +42,7 @@ def test_events_sync_and_close_for_terminal_job(client):
 
 
 def test_events_stream_live_updates_until_terminal(client):
-    jobs.create_job("evt-live", "x.mp4")
-    jobs.set_status("evt-live", "analyzing")
+    _seed_asset("evt-live", "analyzing")
 
     async def scenario() -> str:
         # Worker threads publish through the broker; give it this loop so
@@ -52,8 +57,8 @@ def test_events_stream_live_updates_until_terminal(client):
                 # The stream subscribes before its first yield; publish after
                 # a short delay so events land after subscription.
                 time.sleep(0.3)
-                jobs.set_progress("evt-live", "analyzing chunk 1/2")
-                jobs.set_status("evt-live", "ready")
+                assets_repo.set_progress("evt-live", "analyzing chunk 1/2")
+                assets_repo.set_status("evt-live", "ready")
 
             thread = threading.Thread(target=drive)
             thread.start()

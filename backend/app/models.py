@@ -38,8 +38,15 @@ class VideoMeta(BaseModel):
     height: int = 0
 
 
-class JobStatus(BaseModel):
+class Asset(BaseModel):
+    """An ingested source file plus its analysis.
+
+    Lives in a project; the pre-Plan-1 'job' became exactly this (ids were
+    preserved by the cutover migration, so legacy /api/jobs/{id} URLs work).
+    """
+
     id: str
+    project_id: str
     filename: str
     status: JobStatusValue
     error: str | None = None
@@ -50,15 +57,6 @@ class JobStatus(BaseModel):
     progress: str | None = None
     frame_notes: list[FrameNote] = []
     transcript: list[TranscriptLine] = []
-
-
-class Asset(JobStatus):
-    """An ingested source file plus its analysis (Plan 1 successor of JobStatus).
-
-    Lives in a project; the pre-Plan-1 'job' becomes exactly this.
-    """
-
-    project_id: str
 
 
 class Project(BaseModel):
