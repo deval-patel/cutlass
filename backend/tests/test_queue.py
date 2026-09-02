@@ -47,12 +47,28 @@ def test_enqueue_rejects_unknown_kind():
 
 def test_recovery_reenqueues_only_nonterminal_work(client):
     # One asset per status: only non-terminal ones have work outstanding.
-    for status in ("uploaded", "sampling", "analyzing", "rendering", "ready", "rendered", "failed"):
+    for status in (
+        "uploaded",
+        "sampling",
+        "analyzing",
+        "redrafting",
+        "rendering",
+        "ready",
+        "rendered",
+        "failed",
+    ):
         projects_repo.create_project(f"proj-rec-{status}", f"{status}.mp4")
         assets_repo.create_asset(f"rec-{status}", f"proj-rec-{status}", f"{status}.mp4")
         assets_repo.set_status(f"rec-{status}", status)
 
-    queue = JobQueue(workers=1, handlers={"analyze": lambda _j: None, "render": lambda _j: None})
+    queue = JobQueue(
+        workers=1,
+        handlers={
+            "analyze": lambda _j: None,
+            "redraft": lambda _j: None,
+            "render": lambda _j: None,
+        },
+    )
     recovered = queue.recover_pending()
 
     kinds = {job_id: kind for kind, job_id in recovered}
@@ -60,6 +76,7 @@ def test_recovery_reenqueues_only_nonterminal_work(client):
         "rec-uploaded": "analyze",
         "rec-sampling": "analyze",
         "rec-analyzing": "analyze",
+        "rec-redrafting": "redraft",
         "rec-rendering": "render",
     }
 

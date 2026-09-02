@@ -3,7 +3,14 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 JobStatusValue = Literal[
-    "uploaded", "sampling", "analyzing", "ready", "rendering", "rendered", "failed"
+    "uploaded",
+    "sampling",
+    "analyzing",
+    "redrafting",
+    "ready",
+    "rendering",
+    "rendered",
+    "failed",
 ]
 
 
@@ -57,6 +64,9 @@ class Asset(BaseModel):
     progress: str | None = None
     frame_notes: list[FrameNote] = []
     transcript: list[TranscriptLine] = []
+    # Editorial style (Plan 2): set at upload or by a re-draft request.
+    style_preset: str = "default"
+    user_brief: str = ""
 
 
 class Project(BaseModel):

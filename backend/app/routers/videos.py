@@ -8,7 +8,7 @@ the existing frontend keeps working; new code builds on /api/v1.
 import re
 from typing import Any
 
-from fastapi import APIRouter, Body, File, HTTPException, UploadFile
+from fastapi import APIRouter, Body, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 
 from ..models import Asset, Segment
@@ -33,8 +33,12 @@ def _asset_payload(asset_id: str) -> Asset:
 
 
 @router.post("/upload")
-async def upload(video: UploadFile = File(...)) -> dict[str, str]:
-    asset_id = await ingest_upload(video)
+async def upload(
+    video: UploadFile = File(...),
+    style_preset: str = Form("default"),
+    user_brief: str = Form(""),
+) -> dict[str, str]:
+    asset_id = await ingest_upload(video, style_preset=style_preset, user_brief=user_brief)
     return {"id": asset_id}
 
 

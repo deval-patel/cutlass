@@ -7,13 +7,19 @@ project's timeline document (seeded from the draft EDL when missing).
 import json
 import logging
 import shutil
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from .. import config
-from ..models import FrameNote, TranscriptLine
+from ..models import FrameNote, Segment, TranscriptLine
+from ..prompts.builder import CURRENT_VERSION
 from ..repositories import assets as assets_repo
 from ..repositories import timelines as timelines_repo
+from ..styles import enforcement as enf
+from ..styles import metrics
+from ..styles.models import EditStyle
+from ..styles.presets import resolve_style
 from ..timelines import schema as timeline_schema
 from . import ffmpeg
 from .providers.base import MultimodalProvider
@@ -51,15 +57,64 @@ def _write_frames_manifest(asset_id: str, frames: list[tuple[float, Path]]) -> N
 def sync_timeline_from_draft(asset_id: str) -> None:
     """(Re)build the project timeline from the asset's draft EDL.
 
-    Called when the pipeline produces a draft and when the legacy segment
-    editor saves edits, so the flat-EDL view and the timeline never drift.
+    Called when the pipeline produces a draft, when a re-draft lands, and
+    when the legacy segment editor saves edits — the flat-EDL view and the
+    timeline never drift. Stamps DraftMeta (style + prompt version + stats)
+    so every draft's provenance is answerable.
     """
     asset = assets_repo.get_asset(asset_id)
     if asset is None:
         raise RuntimeError(f"unknown asset {asset_id}")
     fps = asset.meta.fps if asset.meta else None
+    duration = asset.meta.duration_s if asset.meta else 0.0
     document = timeline_schema.from_segments(asset.segments, asset_id=asset_id, frame_rate=fps)
-    timelines_repo.save_timeline(asset.project_id, document, label="draft sync")
+    document.meta = timeline_schema.DraftMeta(
+        prompt_version=CURRENT_VERSION,
+        style_preset=asset.style_preset,
+        user_brief=asset.user_brief,
+        retention=round(metrics.retention(asset.segments, duration), 4) if duration else None,
+        avg_segment_s=round(metrics.avg_segment_s(asset.segments), 3) if asset.segments else None,
+        generated_at=datetime.now(UTC).isoformat(timespec="seconds"),
+    )
+    timelines_repo.save_timeline(asset.project_id, document, label=f"draft: {asset.style_preset}")
+
+
+def _select_draft(
+    provider: MultimodalProvider,
+    notes: list[FrameNote],
+    transcript: list[TranscriptLine] | None,
+    duration_s: float,
+    style: EditStyle,
+) -> list[Segment]:
+    """Model selection + deterministic enforcement + one retention re-prompt.
+
+    The enforcement pass guarantees the style's hard constraints regardless
+    of model behavior; the retention feedback loop nudges the *model* toward
+    the soft target and keeps whichever attempt lands closer.
+    """
+    segments = enf.enforce_segments(
+        provider.select_segments(notes, duration_s, transcript, style=style),
+        style,
+        duration_s,
+        transcript,
+    )
+    feedback = enf.retention_feedback(style, metrics.retention(segments, duration_s))
+    if feedback:
+        logger.info("retention feedback re-prompt: %s", feedback)
+        retry = enf.enforce_segments(
+            provider.select_segments(notes, duration_s, transcript, style=style, feedback=feedback),
+            style,
+            duration_s,
+            transcript,
+        )
+        base_delta = metrics.retention_delta(segments, style, duration_s)
+        retry_delta = metrics.retention_delta(retry, style, duration_s)
+        if retry and (retry_delta is not None and base_delta is not None):
+            if abs(retry_delta) < abs(base_delta):
+                segments = retry
+        elif retry:
+            segments = retry
+    return segments
 
 
 def get_or_seed_timeline(project_id: str) -> tuple[str, int, timeline_schema.Timeline]:
@@ -120,9 +175,11 @@ def transcribe_audio(
 def run_pipeline(asset_id: str) -> None:
     """Full analysis: probe → sample → chunked analysis → global pass → EDL → timeline."""
     try:
-        if assets_repo.get_asset(asset_id) is None:
+        asset = assets_repo.get_asset(asset_id)
+        if asset is None:
             logger.warning("asset %s vanished before analysis; skipping", asset_id)
             return
+        style = resolve_style(asset.style_preset, asset.user_brief)
         provider = get_provider()
         video = source_path(asset_id)
 
@@ -162,7 +219,7 @@ def run_pipeline(asset_id: str) -> None:
         assets_repo.set_notes(asset_id, notes)
 
         assets_repo.set_progress(asset_id, "selecting segments")
-        segments = provider.select_segments(notes, meta.duration_s, transcript)
+        segments = _select_draft(provider, notes, transcript, meta.duration_s, style)
         if not segments:
             raise RuntimeError("model returned no keep-segments")
         assets_repo.set_segments(asset_id, segments)
@@ -173,6 +230,41 @@ def run_pipeline(asset_id: str) -> None:
         assets_repo.set_status(asset_id, "ready")
     except Exception as exc:
         logger.exception("pipeline failed for asset %s", asset_id)
+        assets_repo.set_status(asset_id, "failed", error=str(exc))
+
+
+def run_redraft(asset_id: str) -> None:
+    """Re-run *only* segment selection over cached analysis with a new style.
+
+    No vision calls, no transcription: frame notes and transcript are
+    already stored, so a re-draft is one (or two, with retention feedback)
+    text-model calls plus deterministic enforcement — cheap enough to
+    A/B styles.
+    """
+    try:
+        asset = assets_repo.get_asset(asset_id)
+        if asset is None:
+            logger.warning("asset %s vanished before redraft; skipping", asset_id)
+            return
+        if not asset.frame_notes:
+            raise RuntimeError("no cached frame analysis to redraft from")
+        if asset.meta is None:
+            raise RuntimeError("asset metadata missing; cannot redraft")
+        assets_repo.set_progress(asset_id, "re-selecting segments")
+
+        style = resolve_style(asset.style_preset, asset.user_brief)
+        provider = get_provider()
+        segments = _select_draft(
+            provider, asset.frame_notes, asset.transcript or None, asset.meta.duration_s, style
+        )
+        if not segments:
+            raise RuntimeError("model returned no keep-segments")
+        assets_repo.set_segments(asset_id, segments)
+        sync_timeline_from_draft(asset_id)
+        assets_repo.set_progress(asset_id, None)
+        assets_repo.set_status(asset_id, "ready")
+    except Exception as exc:
+        logger.exception("redraft failed for asset %s", asset_id)
         assets_repo.set_status(asset_id, "failed", error=str(exc))
 
 

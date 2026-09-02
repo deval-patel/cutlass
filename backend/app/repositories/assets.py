@@ -55,13 +55,29 @@ def _row_to_asset(row: sqlite3.Row) -> Asset:
         progress=row["progress"],
         frame_notes=notes,
         transcript=transcript,
+        style_preset=row["style_preset"] or "default",
+        user_brief=row["user_brief"] or "",
     )
 
 
-def create_asset(asset_id: str, project_id: str, filename: str) -> None:
+def create_asset(
+    asset_id: str,
+    project_id: str,
+    filename: str,
+    style_preset: str = "default",
+    user_brief: str = "",
+) -> None:
     _execute(
-        "INSERT INTO assets (id, project_id, filename) VALUES (?, ?, ?)",
-        (asset_id, project_id, filename),
+        "INSERT INTO assets (id, project_id, filename, style_preset, user_brief) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (asset_id, project_id, filename, style_preset, user_brief),
+    )
+
+
+def set_style(asset_id: str, style_preset: str, user_brief: str) -> None:
+    _execute(
+        "UPDATE assets SET style_preset = ?, user_brief = ? WHERE id = ?",
+        (style_preset, user_brief, asset_id),
     )
 
 

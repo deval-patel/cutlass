@@ -5,7 +5,7 @@ import shutil
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, Body, File, HTTPException, UploadFile
+from fastapi import APIRouter, Body, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
@@ -16,7 +16,7 @@ from ..repositories import timelines as timelines_repo
 from ..services import analyzer
 from ..services.ingest import ingest_upload
 from ..services.queue import get_queue
-from ..styles import presets as styles_repo
+from ..styles import presets
 from ..styles.models import PresetSummary
 from ..timelines.schema import Timeline, TimelineInfo, validate
 
@@ -32,7 +32,7 @@ class CreateProjectRequest(BaseModel):
 @router.get("/styles")
 def list_styles() -> list[PresetSummary]:
     """The editorial style preset gallery."""
-    return styles_repo.list_presets()
+    return presets.list_presets()
 
 
 class ProjectDetail(BaseModel):
@@ -104,11 +104,43 @@ def delete_project(project_id: str) -> dict[str, bool]:
     return {"deleted": True}
 
 
+class RedraftRequest(BaseModel):
+    """Re-run segment selection over cached analysis with a new style."""
+
+    preset_id: str = "default"
+    user_brief: str = Field(default="", max_length=2000)
+
+
 @router.post("/projects/{project_id}/assets")
-async def upload_asset(project_id: str, video: UploadFile = File(...)) -> Asset:
+async def upload_asset(
+    project_id: str,
+    video: UploadFile = File(...),
+    style_preset: str = Form("default"),
+    user_brief: str = Form(""),
+) -> Asset:
     _get_project(project_id)
-    asset_id = await ingest_upload(video, project_id=project_id)
+    asset_id = await ingest_upload(
+        video, project_id=project_id, style_preset=style_preset, user_brief=user_brief
+    )
     return _get_asset(asset_id)
+
+
+@router.post("/assets/{asset_id}/redraft")
+def redraft_asset(asset_id: str, body: RedraftRequest) -> dict[str, str]:
+    """Re-run selection with a new style over cached analysis (no vision calls)."""
+    asset = _get_asset(asset_id)
+    try:
+        presets.load_preset(body.preset_id)
+    except KeyError as exc:
+        raise HTTPException(400, f"unknown style preset '{body.preset_id}'") from exc
+    if not asset.frame_notes:
+        raise HTTPException(409, "no cached analysis to redraft from — wait for the first pass")
+    assets_repo.set_style(asset_id, body.preset_id, body.user_brief.strip())
+    # Flip synchronously so clients observe the transition even before the
+    # queue picks the task up (a crash here recovers via the redrafting map).
+    assets_repo.set_status(asset_id, "redrafting")
+    get_queue().enqueue("redraft", asset_id)
+    return {"status": "redrafting"}
 
 
 @router.get("/assets/{asset_id}")

@@ -19,7 +19,7 @@ from ..repositories import assets as assets_repo
 
 logger = logging.getLogger(__name__)
 
-TaskKind = Literal["analyze", "render"]
+TaskKind = Literal["analyze", "redraft", "render"]
 Task = tuple[TaskKind, str] | None  # None is the shutdown sentinel
 
 # A job in one of these states has work outstanding; map it to the task
@@ -28,6 +28,7 @@ _RECOVERY: dict[str, TaskKind] = {
     "uploaded": "analyze",
     "sampling": "analyze",
     "analyzing": "analyze",
+    "redrafting": "redraft",
     "rendering": "render",
 }
 
@@ -35,7 +36,11 @@ _RECOVERY: dict[str, TaskKind] = {
 def _default_handlers() -> Mapping[str, Callable[[str], None]]:
     from . import analyzer
 
-    return {"analyze": analyzer.run_pipeline, "render": analyzer.run_render}
+    return {
+        "analyze": analyzer.run_pipeline,
+        "redraft": analyzer.run_redraft,
+        "render": analyzer.run_render,
+    }
 
 
 class JobQueue:

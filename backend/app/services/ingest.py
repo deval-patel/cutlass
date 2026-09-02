@@ -13,6 +13,7 @@ from fastapi import HTTPException, UploadFile
 from .. import config
 from ..repositories import assets as assets_repo
 from ..repositories import projects as projects_repo
+from ..styles import presets
 from . import analyzer, ffmpeg
 from .queue import get_queue
 
@@ -20,13 +21,23 @@ ALLOWED_EXTENSIONS = {".mp4", ".mov", ".mkv", ".webm", ".m4v", ".avi"}
 
 
 async def ingest_upload(
-    video: UploadFile, project_id: str | None = None, project_name: str | None = None
+    video: UploadFile,
+    project_id: str | None = None,
+    project_name: str | None = None,
+    style_preset: str = "default",
+    user_brief: str = "",
 ) -> str:
     """Validate and store an upload, register it as an asset, queue analysis.
 
     Without a project_id, a fresh project is created for the upload (the
-    legacy one-video-per-project flow). Returns the asset id.
+    legacy one-video-per-project flow). Returns the asset id. An unknown
+    style preset is rejected here (explicit user input), unlike the
+    pipeline's tolerant resolution.
     """
+    try:
+        presets.load_preset(style_preset)
+    except KeyError as exc:
+        raise HTTPException(400, f"unknown style preset '{style_preset}'") from exc
     ext = Path(video.filename or "").suffix.lower()
     if ext not in ALLOWED_EXTENSIONS:
         allowed = ", ".join(sorted(ALLOWED_EXTENSIONS))
@@ -63,6 +74,8 @@ async def ingest_upload(
     if project_id is None:
         project_id = uuid.uuid4().hex[:12]
         projects_repo.create_project(project_id, project_name or video.filename or "video.mp4")
-    assets_repo.create_asset(asset_id, project_id, video.filename or "video.mp4")
+    assets_repo.create_asset(
+        asset_id, project_id, video.filename or "video.mp4", style_preset, user_brief
+    )
     get_queue().enqueue("analyze", asset_id)
     return asset_id
