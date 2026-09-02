@@ -35,6 +35,25 @@ async def upload(video: UploadFile = File(...), background: BackgroundTasks = No
     return {"id": job_id}
 
 
+@router.get("/jobs")
+def list_jobs():
+    jobs = storage.list_jobs()
+    for job in jobs:
+        job.has_render = analyzer.render_path(job.id).exists()
+    return [
+        {
+            "id": job.id,
+            "filename": job.filename,
+            "status": job.status,
+            "duration_s": job.meta.duration_s if job.meta else None,
+            "segments": len(job.segments),
+            "has_render": job.has_render,
+            "created_at": job.created_at,
+        }
+        for job in jobs
+    ]
+
+
 @router.get("/jobs/{job_id}")
 def get_status(job_id: str):
     return _job_payload(job_id)

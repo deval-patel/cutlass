@@ -1,6 +1,5 @@
 import json
 import sqlite3
-from pathlib import Path
 
 from .config import DB_PATH
 from .models import JobStatus, Segment, VideoMeta
@@ -27,6 +26,31 @@ def _connect() -> sqlite3.Connection:
 def init_db() -> None:
     with _connect() as conn:
         conn.execute(_SCHEMA)
+
+
+def _row_to_job(row: sqlite3.Row) -> JobStatus:
+    meta = VideoMeta.model_validate_json(row["meta"]) if row["meta"] else None
+    segments = (
+        [Segment.model_validate(s) for s in json.loads(row["segments"])]
+        if row["segments"]
+        else []
+    )
+    return JobStatus(
+        id=row["id"],
+        filename=row["filename"],
+        status=row["status"],
+        error=row["error"],
+        meta=meta,
+        segments=segments,
+        has_render=False,
+        created_at=row["created_at"],
+    )
+
+
+def list_jobs() -> list[JobStatus]:
+    with _connect() as conn:
+        rows = conn.execute("SELECT * FROM jobs ORDER BY created_at DESC, rowid DESC").fetchall()
+    return [_row_to_job(row) for row in rows]
 
 
 def create_job(job_id: str, filename: str) -> None:
@@ -60,21 +84,4 @@ def set_segments(job_id: str, segments: list[Segment]) -> None:
 def get_job(job_id: str) -> JobStatus | None:
     with _connect() as conn:
         row = conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
-    if row is None:
-        return None
-    meta = VideoMeta.model_validate_json(row["meta"]) if row["meta"] else None
-    segments = (
-        [Segment.model_validate(s) for s in json.loads(row["segments"])]
-        if row["segments"]
-        else []
-    )
-    render_path = Path(row["id"])  # caller resolves under uploads dir via router
-    return JobStatus(
-        id=row["id"],
-        filename=row["filename"],
-        status=row["status"],
-        error=row["error"],
-        meta=meta,
-        segments=segments,
-        has_render=False,
-    )
+    return _row_to_job(row) if row is not None else None

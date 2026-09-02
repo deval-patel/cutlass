@@ -13,6 +13,7 @@ body {
 
 h1 { font-weight: 600; }
 h1 span { color: #4f9cf9; }
+h2 { font-weight: 600; font-size: 18px; margin-bottom: 8px; }
 
 .dropzone {
   border: 2px dashed #3a4150;

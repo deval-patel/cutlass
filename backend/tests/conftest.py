@@ -40,10 +40,14 @@ def test_video() -> Path:
 
 @pytest.fixture()
 def client():
+    from app import storage
+
     storage_dir = Path(os.environ["CUTLASS_DATA"]) / "uploads"
-    # Fresh uploads per test keeps jobs isolated.
+    # Fresh uploads + jobs per test keeps tests isolated.
     if storage_dir.exists():
         shutil.rmtree(storage_dir)
+    with storage._connect() as conn:
+        conn.execute("DELETE FROM jobs")
     with TestClient(app) as c:
         yield c
 
