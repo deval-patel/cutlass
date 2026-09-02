@@ -1,8 +1,11 @@
+import contextlib
 import json
 import sqlite3
+from collections.abc import Sequence
+from typing import Any, cast
 
 from .config import DB_PATH
-from .models import FrameNote, JobStatus, Segment, TranscriptLine, VideoMeta
+from .models import FrameNote, JobStatus, JobStatusValue, Segment, TranscriptLine, VideoMeta
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS jobs (
@@ -31,24 +34,16 @@ def init_db() -> None:
         conn.execute(_SCHEMA)
         # Migrate DBs created before these columns existed.
         for col in ("progress", "notes", "transcript"):
-            try:
+            with contextlib.suppress(sqlite3.OperationalError):  # column already present
                 conn.execute(f"ALTER TABLE jobs ADD COLUMN {col} TEXT")
-            except sqlite3.OperationalError:
-                pass  # column already present
 
 
 def _row_to_job(row: sqlite3.Row) -> JobStatus:
     meta = VideoMeta.model_validate_json(row["meta"]) if row["meta"] else None
     segments = (
-        [Segment.model_validate(s) for s in json.loads(row["segments"])]
-        if row["segments"]
-        else []
+        [Segment.model_validate(s) for s in json.loads(row["segments"])] if row["segments"] else []
     )
-    notes = (
-        [FrameNote.model_validate(n) for n in json.loads(row["notes"])]
-        if row["notes"]
-        else []
-    )
+    notes = [FrameNote.model_validate(n) for n in json.loads(row["notes"])] if row["notes"] else []
     transcript = (
         [TranscriptLine.model_validate(t) for t in json.loads(row["transcript"])]
         if row["transcript"]
@@ -57,7 +52,7 @@ def _row_to_job(row: sqlite3.Row) -> JobStatus:
     return JobStatus(
         id=row["id"],
         filename=row["filename"],
-        status=row["status"],
+        status=cast(JobStatusValue, row["status"]),
         error=row["error"],
         meta=meta,
         segments=segments,
@@ -77,9 +72,7 @@ def list_jobs() -> list[JobStatus]:
 
 def create_job(job_id: str, filename: str) -> None:
     with _connect() as conn:
-        conn.execute(
-            "INSERT INTO jobs (id, filename) VALUES (?, ?)", (job_id, filename)
-        )
+        conn.execute("INSERT INTO jobs (id, filename) VALUES (?, ?)", (job_id, filename))
 
 
 def set_status(job_id: str, status: str, error: str | None = None) -> None:
@@ -108,7 +101,7 @@ def set_progress(job_id: str, progress: str | None) -> None:
         conn.execute("UPDATE jobs SET progress = ? WHERE id = ?", (progress, job_id))
 
 
-def set_notes(job_id: str, notes: list[FrameNote | dict]) -> None:
+def set_notes(job_id: str, notes: Sequence[FrameNote | dict[str, Any]]) -> None:
     models = [n if isinstance(n, FrameNote) else FrameNote.model_validate(n) for n in notes]
     payload = json.dumps([n.model_dump() for n in models])
     with _connect() as conn:

@@ -27,5 +27,5 @@ if _dist.exists():
     app.mount("/assets", StaticFiles(directory=_dist / "assets"), name="assets")
 
     @app.get("/")
-    def index():
+    def index() -> FileResponse:
         return FileResponse(_dist / "index.html")

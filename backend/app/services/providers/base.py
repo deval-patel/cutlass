@@ -18,7 +18,7 @@ class MultimodalProvider(ABC):
         self,
         notes: list[FrameNote],
         total_duration_s: float,
-        transcript: list[TranscriptLine] = [],
+        transcript: list[TranscriptLine] | None = None,
     ) -> list[Segment]:
         """Given per-frame notes (and optionally a transcript) over the whole
         video, pick keep-segments."""

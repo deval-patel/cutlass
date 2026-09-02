@@ -1,11 +1,19 @@
 import json
 import logging
 from pathlib import Path
+from typing import Any
 
 from .. import storage
-from ..config import CHUNK_SIZE, SAMPLE_INTERVAL_S, TRANSCRIBE_CHUNK_S, TRANSCRIBE_ENABLED, UPLOADS_DIR
-from ..models import Segment, TranscriptLine
+from ..config import (
+    CHUNK_SIZE,
+    SAMPLE_INTERVAL_S,
+    TRANSCRIBE_CHUNK_S,
+    TRANSCRIBE_ENABLED,
+    UPLOADS_DIR,
+)
+from ..models import FrameNote, TranscriptLine
 from . import ffmpeg
+from .providers.base import MultimodalProvider
 from .providers.dry import get_provider
 
 logger = logging.getLogger(__name__)
@@ -23,12 +31,13 @@ def render_path(job_id: str) -> Path:
     return job_dir(job_id) / "final_cut.mp4"
 
 
-def frames_manifest(job_id: str) -> list[dict]:
+def frames_manifest(job_id: str) -> list[dict[str, Any]]:
     """[{t, file}] for every sampled frame, or [] if sampling hasn't run."""
     manifest = job_dir(job_id) / "frames.json"
     if not manifest.exists():
         return []
-    return json.loads(manifest.read_text())
+    parsed: list[dict[str, Any]] = json.loads(manifest.read_text())
+    return parsed
 
 
 def _write_frames_manifest(job_id: str, frames: list[tuple[float, Path]]) -> None:
@@ -36,7 +45,9 @@ def _write_frames_manifest(job_id: str, frames: list[tuple[float, Path]]) -> Non
     (job_dir(job_id) / "frames.json").write_text(json.dumps(payload))
 
 
-def transcribe_audio(job_id: str, provider, duration_s: float) -> list[TranscriptLine]:
+def transcribe_audio(
+    job_id: str, provider: MultimodalProvider, duration_s: float
+) -> list[TranscriptLine]:
     """Extract audio and transcribe it in time-chunks, offsetting each chunk's
     timestamps back to the original timeline."""
     lines: list[TranscriptLine] = []
@@ -50,15 +61,19 @@ def transcribe_audio(job_id: str, provider, duration_s: float) -> list[Transcrip
         storage.set_progress(job_id, f"transcribing audio {i + 1}/{len(chunk_starts)}")
         clip_len = min(TRANSCRIBE_CHUNK_S, duration_s - chunk_start)
         wav = ffmpeg.extract_audio(
-            source_path(job_id), audio_dir / f"chunk_{i:03d}.wav",
-            start_s=chunk_start, duration_s=clip_len,
+            source_path(job_id),
+            audio_dir / f"chunk_{i:03d}.wav",
+            start_s=chunk_start,
+            duration_s=clip_len,
         )
         for line in provider.transcribe(wav, clip_len):
-            lines.append(TranscriptLine(
-                start_s=chunk_start + line.start_s,
-                end_s=chunk_start + line.end_s,
-                text=line.text,
-            ))
+            lines.append(
+                TranscriptLine(
+                    start_s=chunk_start + line.start_s,
+                    end_s=chunk_start + line.end_s,
+                    text=line.text,
+                )
+            )
     return lines
 
 
@@ -90,10 +105,12 @@ def run_pipeline(job_id: str) -> None:
             try:
                 transcript = transcribe_audio(job_id, provider, meta.duration_s)
                 storage.set_transcript(job_id, transcript)
-            except Exception:  # noqa: BLE001 — audio is a bonus, not a gate
-                logger.exception("transcription failed for job %s; continuing without audio", job_id)
+            except Exception:
+                logger.exception(
+                    "transcription failed for job %s; continuing without audio", job_id
+                )
 
-        notes = []
+        notes: list[FrameNote] = []
         chunks = range(0, len(frames), CHUNK_SIZE)
         for i, start in enumerate(chunks):
             storage.set_progress(job_id, f"analyzing chunk {i + 1}/{len(chunks)}")
@@ -108,7 +125,7 @@ def run_pipeline(job_id: str) -> None:
         storage.set_segments(job_id, segments)
         storage.set_progress(job_id, None)
         storage.set_status(job_id, "ready")
-    except Exception as exc:  # noqa: BLE001 — job isolation
+    except Exception as exc:
         logger.exception("pipeline failed for job %s", job_id)
         storage.set_status(job_id, "failed", error=str(exc))
 
@@ -122,6 +139,6 @@ def run_render(job_id: str) -> None:
         ranges = [(s.start_s, s.end_s) for s in job.segments]
         ffmpeg.render_cut(source_path(job_id), ranges, render_path(job_id))
         storage.set_status(job_id, "rendered")
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.exception("render failed for job %s", job_id)
         storage.set_status(job_id, "failed", error=str(exc))

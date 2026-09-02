@@ -1,14 +1,14 @@
 import re
 import uuid
 from pathlib import Path
+from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Body, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 
 from .. import config, storage
-from ..models import Segment
-from ..services import analyzer
-from ..services import ffmpeg
+from ..models import JobStatus, Segment
+from ..services import analyzer, ffmpeg
 from ..services.edl import normalize_segments
 
 router = APIRouter(prefix="/api")
@@ -18,7 +18,7 @@ ALLOWED_EXTENSIONS = {".mp4", ".mov", ".mkv", ".webm", ".m4v", ".avi"}
 _FRAME_NAME = re.compile(r"^frame_\d{6}\.jpg$")
 
 
-def _job_payload(job_id: str):
+def _job_payload(job_id: str) -> JobStatus:
     job = storage.get_job(job_id)
     if job is None:
         raise HTTPException(404, "job not found")
@@ -27,12 +27,11 @@ def _job_payload(job_id: str):
 
 
 @router.post("/upload")
-async def upload(video: UploadFile = File(...), background: BackgroundTasks = None):
+async def upload(background: BackgroundTasks, video: UploadFile = File(...)) -> dict[str, str]:
     ext = Path(video.filename or "").suffix.lower()
     if ext not in ALLOWED_EXTENSIONS:
-        raise HTTPException(
-            400, f"unsupported file type '{ext or '(none)'}' — allowed: {sorted(ALLOWED_EXTENSIONS)}"
-        )
+        allowed = ", ".join(sorted(ALLOWED_EXTENSIONS))
+        raise HTTPException(400, f"unsupported file type '{ext or '(none)'}' — allowed: {allowed}")
 
     job_id = uuid.uuid4().hex[:12]
     directory = analyzer.job_dir(job_id)
@@ -57,9 +56,9 @@ async def upload(video: UploadFile = File(...), background: BackgroundTasks = No
     # Fail fast on files that aren't actually readable video.
     try:
         ffmpeg.probe(target)
-    except Exception:
+    except Exception as exc:
         target.unlink(missing_ok=True)
-        raise HTTPException(400, "file could not be read as a video (ffprobe failed)")
+        raise HTTPException(400, "file could not be read as a video (ffprobe failed)") from exc
 
     storage.create_job(job_id, video.filename or "video.mp4")
     background.add_task(analyzer.run_pipeline, job_id)
@@ -67,7 +66,7 @@ async def upload(video: UploadFile = File(...), background: BackgroundTasks = No
 
 
 @router.get("/jobs")
-def list_jobs():
+def list_jobs() -> list[dict[str, Any]]:
     jobs = storage.list_jobs()
     for job in jobs:
         job.has_render = analyzer.render_path(job.id).exists()
@@ -86,12 +85,12 @@ def list_jobs():
 
 
 @router.get("/jobs/{job_id}")
-def get_status(job_id: str):
+def get_status(job_id: str) -> JobStatus:
     return _job_payload(job_id)
 
 
 @router.put("/jobs/{job_id}/segments")
-def update_segments(job_id: str, segments: list[Segment] = Body(...)):
+def update_segments(job_id: str, segments: list[Segment] = Body(...)) -> JobStatus:
     job = _job_payload(job_id)
     if job.status not in EDITABLE_STATUSES:
         raise HTTPException(409, f"cannot edit segments while status is '{job.status}'")
@@ -109,14 +108,14 @@ def update_segments(job_id: str, segments: list[Segment] = Body(...)):
 
 
 @router.get("/jobs/{job_id}/frames")
-def list_frames(job_id: str):
+def list_frames(job_id: str) -> list[dict[str, Any]]:
     if storage.get_job(job_id) is None:
         raise HTTPException(404, "job not found")
     return analyzer.frames_manifest(job_id)
 
 
 @router.get("/jobs/{job_id}/frames/{name}")
-def get_frame(job_id: str, name: str):
+def get_frame(job_id: str, name: str) -> FileResponse:
     if not _FRAME_NAME.match(name):
         raise HTTPException(400, "invalid frame name")
     path = analyzer.job_dir(job_id) / "frames" / name
@@ -126,7 +125,7 @@ def get_frame(job_id: str, name: str):
 
 
 @router.get("/jobs/{job_id}/source")
-def get_source(job_id: str):
+def get_source(job_id: str) -> FileResponse:
     path = analyzer.source_path(job_id)
     if not path.exists():
         raise HTTPException(404, "source not found")
@@ -134,7 +133,7 @@ def get_source(job_id: str):
 
 
 @router.get("/jobs/{job_id}/render")
-def get_render(job_id: str):
+def get_render(job_id: str) -> FileResponse:
     path = analyzer.render_path(job_id)
     if not path.exists():
         raise HTTPException(404, "render not found")
@@ -142,7 +141,7 @@ def get_render(job_id: str):
 
 
 @router.post("/jobs/{job_id}/render")
-def start_render(job_id: str, background: BackgroundTasks):
+def start_render(job_id: str, background: BackgroundTasks) -> dict[str, str]:
     if storage.get_job(job_id) is None:
         raise HTTPException(404, "job not found")
     if analyzer.render_path(job_id).exists():

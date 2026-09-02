@@ -5,15 +5,23 @@ from pathlib import Path
 from ..models import VideoMeta
 
 
-def _run(args: list[str]) -> subprocess.CompletedProcess:
+def _run(args: list[str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(args, capture_output=True, text=True, encoding="utf-8")
 
 
 def probe(path: Path) -> VideoMeta:
-    proc = _run([
-        "ffprobe", "-v", "error", "-print_format", "json",
-        "-show_streams", "-show_format", str(path),
-    ])
+    proc = _run(
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-print_format",
+            "json",
+            "-show_streams",
+            "-show_format",
+            str(path),
+        ]
+    )
     if proc.returncode != 0:
         raise RuntimeError(f"ffprobe failed: {proc.stderr[:500]}")
     data = json.loads(proc.stdout)
@@ -44,11 +52,19 @@ def extract_frames(
     Returns sorted [(timestamp_s, jpeg_path), ...].
     """
     out_dir.mkdir(parents=True, exist_ok=True)
-    proc = _run([
-        "ffmpeg", "-y", "-i", str(video),
-        "-vf", f"fps=1/{interval_s},scale={width}:-2",
-        "-q:v", "4", str(out_dir / "frame_%06d.jpg"),
-    ])
+    proc = _run(
+        [
+            "ffmpeg",
+            "-y",
+            "-i",
+            str(video),
+            "-vf",
+            f"fps=1/{interval_s},scale={width}:-2",
+            "-q:v",
+            "4",
+            str(out_dir / "frame_%06d.jpg"),
+        ]
+    )
     if proc.returncode != 0:
         raise RuntimeError(f"frame extraction failed: {proc.stderr[-500:]}")
     frames = sorted(out_dir.glob("frame_*.jpg"))
@@ -56,8 +72,9 @@ def extract_frames(
     return [((i) * interval_s, p) for i, p in enumerate(frames)]
 
 
-def extract_audio(video: Path, out_path: Path, start_s: float | None = None,
-                  duration_s: float | None = None) -> Path:
+def extract_audio(
+    video: Path, out_path: Path, start_s: float | None = None, duration_s: float | None = None
+) -> Path:
     """Extract 16kHz mono WAV (optionally a time slice) for transcription."""
     out_path.parent.mkdir(parents=True, exist_ok=True)
     args = ["ffmpeg", "-y"]
@@ -66,8 +83,15 @@ def extract_audio(video: Path, out_path: Path, start_s: float | None = None,
     if duration_s is not None:
         args += ["-t", f"{duration_s:.3f}"]
     args += [
-        "-i", str(video),
-        "-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le",
+        "-i",
+        str(video),
+        "-vn",
+        "-ac",
+        "1",
+        "-ar",
+        "16000",
+        "-c:a",
+        "pcm_s16le",
         str(out_path),
     ]
     proc = _run(args)
@@ -80,19 +104,33 @@ def render_cut(video: Path, segments: list[tuple[float, float]], out_path: Path)
     """Concatenate keep-segments into a single re-encoded mp4."""
     if not segments:
         raise RuntimeError("no segments to render")
-    filter_parts = [
-        f"(between(t,{start:.3f},{end:.3f}))" for start, end in segments
-    ]
+    filter_parts = [f"(between(t,{start:.3f},{end:.3f}))" for start, end in segments]
     expr = "+".join(filter_parts)
     vf = "select='" + expr + "',setpts=N/FRAME_RATE/TB"
     # Match select on the audio timeline too, then resync PTS.
     af = "aselect='" + expr + "',asetpts=N/SR/TB"
-    proc = _run([
-        "ffmpeg", "-y", "-i", str(video),
-        "-vf", vf, "-af", af,
-        "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
-        "-c:a", "aac", "-movflags", "+faststart",
-        str(out_path),
-    ])
+    proc = _run(
+        [
+            "ffmpeg",
+            "-y",
+            "-i",
+            str(video),
+            "-vf",
+            vf,
+            "-af",
+            af,
+            "-c:v",
+            "libx264",
+            "-preset",
+            "veryfast",
+            "-crf",
+            "20",
+            "-c:a",
+            "aac",
+            "-movflags",
+            "+faststart",
+            str(out_path),
+        ]
+    )
     if proc.returncode != 0:
         raise RuntimeError(f"render failed: {proc.stderr[-500:]}")

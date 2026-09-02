@@ -13,9 +13,14 @@ def normalize_segments(segments: list[Segment], duration_s: float) -> list[Segme
         start = max(0.0, min(s.start_s, duration_s))
         end = max(0.0, min(s.end_s, duration_s))
         if end - start >= MIN_SEGMENT_S:
-            cleaned.append(Segment(
-                start_s=start, end_s=end, reason=s.reason, confidence=s.confidence,
-            ))
+            cleaned.append(
+                Segment(
+                    start_s=start,
+                    end_s=end,
+                    reason=s.reason,
+                    confidence=s.confidence,
+                )
+            )
     cleaned.sort(key=lambda s: s.start_s)
     merged: list[Segment] = []
     for s in cleaned:
