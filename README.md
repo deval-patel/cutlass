@@ -2,6 +2,8 @@
 
 AI video editor — upload a video, a multimodal model drafts the first cut for you.
 
+Roadmap and architecture plans live in [`docs/ROADMAP.md`](docs/ROADMAP.md).
+
 ## Features
 
 - **Upload** a single video (MP4/MOV/MKV/WebM/M4V/AVI) with extension, size, and content validation
@@ -43,7 +45,7 @@ whole pipeline with stubbed model calls.
 ```bash
 # Backend
 cd backend
-pip install -r requirements.txt
+pip install -r requirements-dev.lock
 uvicorn app.main:app --reload
 
 # Frontend (separate terminal)
@@ -76,18 +78,82 @@ Any OpenAI-compatible vision endpoint works:
 | `TRANSCRIBE_CHUNK_S` | `600` | audio chunk length for transcription |
 | `MAX_UPLOAD_GB` | `2.0` | upload size limit |
 
+## Development workflow
+
+Two stacks, both gated by the same checks in CI (`.github/workflows/ci.yml`):
+
+| | Backend (`backend/`) | Frontend (`frontend/`) |
+|---|---|---|
+| Lint + format | `ruff` | `eslint` + `prettier` |
+| Types | `mypy --strict` | `tsc --strict` |
+| Tests | `pytest` (needs ffmpeg on PATH) | `vitest` + Testing Library |
+
+```bash
+# Backend — one-time setup
+cd backend
+pip install -r requirements-dev.lock
+
+# The checks CI runs:
+ruff check . && ruff format --check .
+mypy app
+python -m pytest
+
+# Frontend — one-time setup
+cd frontend
+npm install
+
+# The checks CI runs:
+npm run lint
+npm run typecheck
+npm run test
+npm run build
+```
+
+Optional local pre-commit hooks (same fixers, run on every `git commit`):
+
+```bash
+pip install pre-commit
+pre-commit install
+```
+
+Dependency policy: `requirements*.txt` are the human-edited inputs;
+`requirements*.lock` are the pinned, cross-platform installs used by CI and
+Docker. Regenerate locks after editing inputs:
+
+```bash
+cd backend
+uv pip compile requirements.txt -o requirements.lock --universal --python-version 3.12
+uv pip compile requirements-dev.txt -o requirements-dev.lock --universal --python-version 3.12
+```
+
+### Presubmit (GitHub branch protection)
+
+CI runs on every pull request and every push to `main`. To make PRs the only
+way to land changes, enable branch protection once in GitHub:
+**Repo → Settings → Branches → Add branch ruleset for `main`** → require the
+`CI` workflow to pass before merging, and (optionally) require PRs with at
+least one approval. CI cannot configure this for you.
+
 ## Tests
 
 ```bash
 cd backend
-python -m pytest tests -q
+python -m pytest
 ```
 
-Requires ffmpeg/ffprobe on PATH. The suite covers the EDL normalizer, GLM
-response parsing, upload validation, transcription, job history, and the full
-upload → analyze → render → download pipeline (in `DRY_RUN` mode, no API
-calls). `tests/test_production_serving.py` additionally verifies the built
-frontend is served by FastAPI — the same path the Docker container runs.
+Requires ffmpeg/ffprobe on PATH (tests skip with a clear reason if missing).
+The suite covers the EDL normalizer, GLM response parsing, upload validation,
+transcription, job history, and the full upload → analyze → render → download
+pipeline (in `DRY_RUN` mode, no API calls). `tests/test_production_serving.py`
+additionally verifies the built frontend is served by FastAPI — the same path
+the Docker container runs (it self-skips until `npm run build` has run once).
+
+Frontend tests:
+
+```bash
+cd frontend
+npm run test
+```
 
 ## Run (Docker)
 
