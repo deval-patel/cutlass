@@ -1,5 +1,6 @@
 import base64
 import json
+import logging
 import re
 from pathlib import Path
 from typing import Any, cast
@@ -8,43 +9,18 @@ import httpx
 
 from ... import config
 from ...models import FrameNote, FrameNoteLabel, Segment, TranscriptLine
+from ...prompts.builder import PromptBuilder
+from ...styles.models import EditStyle
+from ...styles.presets import resolve_style
 from .base import MultimodalProvider
+
+logger = logging.getLogger(__name__)
 
 VALID_LABELS = {"core", "filler", "dead_air", "intro_outro", "repetition", "other"}
 
-FRAME_PROMPT = """\
-You are a video editor's assistant. You will receive frames sampled from one
-video, in chronological order. Each image is preceded by its timestamp.
-
-For EVERY frame, output a JSON array (and nothing else) where each element is:
-{"t": <timestamp seconds>, "description": "<what is shown / happening>",
- "label": "<one of core|filler|dead_air|intro_outro|repetition>"}
-
-- core: meaningful content the video exists to deliver
-- filler: tangential rambling, ums/hesitation shots, low-value asides
-- dead_air: nothing happening (black frames, idle screen, silence pauses)
-- intro_outro: title cards, intros, outros, branding, end screens
-- repetition: visually repeating what an earlier frame already covered
-"""
-
-GLOBAL_PROMPT = """\
-You are editing a video of total duration {duration:.0f}s. Below are per-frame
-notes from the whole video (timestamp, description, label){transcript_intro}.
-Produce the FIRST DRAFT CUT: select contiguous keep-segments containing the
-meaningful content while cutting dead air, filler, intros/outros, and
-repetition.
-
-Output ONLY a JSON array of keep-segments:
-[{{"start_s": <float>, "end_s": <float>, "reason": "<why kept>",
-   "confidence": <0-1>}}]
-
-Rules: segments must be chronological and non-overlapping, cover at most the
-video duration, keep the video coherent — never cut mid-sentence when the
-transcript makes sentence boundaries clear, and pad boundaries slightly.
-{transcript_block}
-Notes:
-{notes}
-"""
+# Module-level builder: tests construct providers without __init__, so the
+# templates must not depend on instance state.
+_builder = PromptBuilder()
 
 
 class GLMProvider(MultimodalProvider):
@@ -69,7 +45,7 @@ class GLMProvider(MultimodalProvider):
     def analyze_frames(
         self, frames: list[tuple[float, Path]], total_duration_s: float
     ) -> list[FrameNote]:
-        content: list[dict[str, Any]] = [{"type": "text", "text": FRAME_PROMPT}]
+        content: list[dict[str, Any]] = [{"type": "text", "text": _builder.label_frames()}]
         for ts, path in frames:
             b64 = base64.b64encode(path.read_bytes()).decode()
             content.append({"type": "text", "text": f"t={ts:.1f}s"})
@@ -125,7 +101,46 @@ class GLMProvider(MultimodalProvider):
         notes: list[FrameNote],
         total_duration_s: float,
         transcript: list[TranscriptLine] | None = None,
+        style: EditStyle | None = None,
+        feedback: str | None = None,
     ) -> list[Segment]:
+        """One global pass over the notes (+ transcript), with a single
+        validation-retry and an optional retention-feedback re-prompt."""
+        resolved = style if style is not None else resolve_style(None, None)
+        prompt = self._selection_prompt(notes, total_duration_s, transcript, resolved)
+        messages: list[dict[str, Any]] = [{"role": "user", "content": prompt}]
+
+        error: str | None = None
+        for attempt in range(2):
+            raw = self._chat(config.TEXT_MODEL, messages)
+            try:
+                segments = _coerce_segments(_extract_json(raw), total_duration_s)
+            except ValueError as exc:
+                error = str(exc)
+                logger.warning("invalid selection response (attempt %d): %s", attempt + 1, error)
+                messages = [
+                    {"role": "user", "content": prompt},
+                    {"role": "assistant", "content": raw},
+                    _builder.select_segments_repair(raw, error),
+                ]
+                continue
+            if segments:
+                return segments
+            error = "response contained no usable keep-segments"
+            messages = [
+                {"role": "user", "content": prompt},
+                {"role": "assistant", "content": raw},
+                _builder.select_segments_repair(raw, error),
+            ]
+        raise ValueError(f"model selection failed after retry: {error}")
+
+    def _selection_prompt(
+        self,
+        notes: list[FrameNote],
+        total_duration_s: float,
+        transcript: list[TranscriptLine] | None,
+        style: EditStyle,
+    ) -> str:
         notes_text = "\n".join(
             f"- {n.timestamp_s:.1f}s [{n.label}]: {n.description}" for n in notes
         )
@@ -141,30 +156,38 @@ class GLMProvider(MultimodalProvider):
         else:
             transcript_intro = ""
             transcript_block = ""
-        prompt = GLOBAL_PROMPT.format(
-            duration=total_duration_s,
+        return _builder.select_segments(
+            duration_s=total_duration_s,
+            style=style,
             transcript_intro=transcript_intro,
             transcript_block=transcript_block,
             notes=notes_text,
         )
-        raw = self._chat(config.TEXT_MODEL, [{"role": "user", "content": prompt}])
-        items = _extract_json(raw)
-        segments = []
-        for item in items:
-            if not isinstance(item, dict):
-                continue
+
+
+def _coerce_segments(items: list[Any], total_duration_s: float) -> list[Segment]:
+    """Validate + clamp model output. Raises ValueError when nothing usable."""
+    segments: list[Segment] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        try:
             start = max(0.0, float(item.get("start_s", 0)))
             end = min(total_duration_s, float(item.get("end_s", 0)))
-            if end > start:
-                segments.append(
-                    Segment(
-                        start_s=start,
-                        end_s=end,
-                        reason=str(item.get("reason", "")),
-                        confidence=float(item.get("confidence", 1.0)),
-                    )
+        except (TypeError, ValueError):
+            continue
+        if end > start:
+            segments.append(
+                Segment(
+                    start_s=start,
+                    end_s=end,
+                    reason=str(item.get("reason", "")),
+                    confidence=float(item.get("confidence", 1.0)),
                 )
-        return segments
+            )
+    if not segments:
+        raise ValueError("no valid keep-segments could be parsed")
+    return segments
 
 
 def _extract_json(raw: str) -> list[Any]:

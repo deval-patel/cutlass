@@ -45,11 +45,24 @@ class Track(BaseModel):
     clips: list[Clip] = []
 
 
+class DraftMeta(BaseModel):
+    """Provenance of an AI-generated draft (Plan 2): which prompt and style
+    produced it, plus measured stats — every draft's 'why' is answerable."""
+
+    prompt_version: str
+    style_preset: str = "default"
+    user_brief: str = ""
+    retention: float | None = None
+    avg_segment_s: float | None = None
+    generated_at: str | None = None
+
+
 class Timeline(BaseModel):
     schema_version: int = SCHEMA_VERSION
     name: str = "main"
     frame_rate: float | None = None
     tracks: list[Track] = []
+    meta: DraftMeta | None = None
 
 
 class TimelineInfo(BaseModel):

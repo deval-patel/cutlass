@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from ...models import FrameNote, Segment, TranscriptLine
+from ...styles.models import EditStyle
 from .base import MultimodalProvider
 
 
@@ -36,10 +37,12 @@ class DryRunProvider(MultimodalProvider):
         notes: list[FrameNote],
         total_duration_s: float,
         transcript: list[TranscriptLine] | None = None,
+        style: EditStyle | None = None,
+        feedback: str | None = None,
     ) -> list[Segment]:
-        # Heuristic draft: drop the first 10% (intro) and last 10% (outro),
-        # cut everything else into keep-segments with 1s gaps removed is
-        # unnecessary — just keep one big middle segment.
+        # Heuristic draft: drop the first 10% (intro) and last 10% (outro).
+        # Deterministic styles are applied downstream by the enforcement
+        # pass, so the stub stays style-agnostic.
         start = total_duration_s * 0.10
         end = total_duration_s * 0.90
         if end <= start:
