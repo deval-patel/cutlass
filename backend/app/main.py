@@ -1,4 +1,6 @@
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -8,10 +10,23 @@ from fastapi.staticfiles import StaticFiles
 
 from .db import migrations
 from .routers import videos
+from .services.queue import get_queue
 
 logging.basicConfig(level=logging.INFO)
 
-app = FastAPI(title="Cutlass")
+
+@asynccontextmanager
+async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    """Start the worker queue (recovering work stranded by a crash) and stop
+    it cleanly on shutdown, letting in-flight tasks finish."""
+    job_queue = get_queue()
+    job_queue.recover_pending()
+    job_queue.start()
+    yield
+    job_queue.stop()
+
+
+app = FastAPI(title="Cutlass", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173"],

@@ -3,7 +3,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks, Body, File, HTTPException, UploadFile
+from fastapi import APIRouter, Body, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 
 from .. import config
@@ -11,6 +11,7 @@ from ..models import JobStatus, Segment
 from ..repositories import jobs as jobs_repo
 from ..services import analyzer, ffmpeg
 from ..services.edl import normalize_segments
+from ..services.queue import get_queue
 
 router = APIRouter(prefix="/api")
 
@@ -28,7 +29,7 @@ def _job_payload(job_id: str) -> JobStatus:
 
 
 @router.post("/upload")
-async def upload(background: BackgroundTasks, video: UploadFile = File(...)) -> dict[str, str]:
+async def upload(video: UploadFile = File(...)) -> dict[str, str]:
     ext = Path(video.filename or "").suffix.lower()
     if ext not in ALLOWED_EXTENSIONS:
         allowed = ", ".join(sorted(ALLOWED_EXTENSIONS))
@@ -62,7 +63,7 @@ async def upload(background: BackgroundTasks, video: UploadFile = File(...)) -> 
         raise HTTPException(400, "file could not be read as a video (ffprobe failed)") from exc
 
     jobs_repo.create_job(job_id, video.filename or "video.mp4")
-    background.add_task(analyzer.run_pipeline, job_id)
+    get_queue().enqueue("analyze", job_id)
     return {"id": job_id}
 
 
@@ -142,10 +143,10 @@ def get_render(job_id: str) -> FileResponse:
 
 
 @router.post("/jobs/{job_id}/render")
-def start_render(job_id: str, background: BackgroundTasks) -> dict[str, str]:
+def start_render(job_id: str) -> dict[str, str]:
     if jobs_repo.get_job(job_id) is None:
         raise HTTPException(404, "job not found")
     if analyzer.render_path(job_id).exists():
         return {"status": "already rendered"}
-    background.add_task(analyzer.run_render, job_id)
+    get_queue().enqueue("render", job_id)
     return {"status": "rendering"}

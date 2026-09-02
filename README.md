@@ -76,6 +76,7 @@ Any OpenAI-compatible vision endpoint works:
 | `TRANSCRIBE_ENABLED` | `1` | transcribe audio and feed it into edit decisions |
 | `TRANSCRIBE_MODEL` | `whisper-1` | model for `/audio/transcriptions` |
 | `TRANSCRIBE_CHUNK_S` | `600` | audio chunk length for transcription |
+| `QUEUE_WORKERS` | `2` | concurrent analysis/render workers |
 | `MAX_UPLOAD_GB` | `2.0` | upload size limit |
 
 ## Development workflow
