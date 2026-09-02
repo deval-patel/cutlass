@@ -8,8 +8,12 @@ export default function App() {
   const [error, setError] = useState(null)
 
   async function refreshJobs() {
-    const res = await fetch('/api/jobs')
-    if (res.ok) setJobs(await res.json())
+    try {
+      const res = await fetch('/api/jobs')
+      if (res.ok) setJobs(await res.json())
+    } catch {
+      // The history list is non-critical — leave the previous state in place.
+    }
   }
 
   useEffect(() => { refreshJobs() }, [])
@@ -18,15 +22,19 @@ export default function App() {
     setError(null)
     const body = new FormData()
     body.append('video', file)
-    const res = await fetch('/api/upload', { method: 'POST', body })
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}))
-      setError(err.detail || 'Upload failed')
-      return
+    try {
+      const res = await fetch('/api/upload', { method: 'POST', body })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        setError(err.detail || 'Upload failed')
+        return
+      }
+      const data = await res.json()
+      setJobId(data.id)
+      refreshJobs()
+    } catch {
+      setError('Upload failed — network error')
     }
-    const data = await res.json()
-    setJobId(data.id)
-    refreshJobs()
   }
 
   if (jobId) return <JobView jobId={jobId} onReset={() => { setJobId(null); refreshJobs() }} />

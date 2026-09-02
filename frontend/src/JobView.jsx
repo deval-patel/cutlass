@@ -2,31 +2,71 @@ import { useEffect, useRef, useState } from 'react'
 
 const POLL_MS = 2000
 const TERMINAL = ['ready', 'rendered', 'failed']
+const SHOWABLE = ['ready', 'rendered', 'rendering']
 
 export default function JobView({ jobId, onReset }) {
   const [job, setJob] = useState(null)
+  const [loadError, setLoadError] = useState(null)
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState([])
   const [saveError, setSaveError] = useState(null)
   const [thumbs, setThumbs] = useState([])
+  const [watchingRender, setWatchingRender] = useState(false)
   const videoRef = useRef(null)
 
+  // Poll job status until it reaches a terminal state. Transient fetch
+  // failures keep retrying instead of silently freezing the UI; a missing
+  // job stops the loop with an explicit error.
   useEffect(() => {
+    let cancelled = false
     let timer
     async function poll() {
-      const res = await fetch(`/api/jobs/${jobId}`)
-      if (res.ok) {
+      try {
+        const res = await fetch(`/api/jobs/${jobId}`)
+        if (res.status === 404) {
+          if (!cancelled) setLoadError('Job not found')
+          return
+        }
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
         const data = await res.json()
+        if (cancelled) return
+        setLoadError(null)
         setJob(data)
         if (!TERMINAL.includes(data.status)) timer = setTimeout(poll, POLL_MS)
+      } catch {
+        if (!cancelled) {
+          setLoadError('Connection lost — retrying…')
+          timer = setTimeout(poll, POLL_MS)
+        }
       }
     }
     poll()
-    return () => clearTimeout(timer)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
   }, [jobId])
 
+  // Watch an in-flight render (triggered by startRender) until terminal.
+  // The interval is owned by this effect, so unmount always cleans it up.
+  useEffect(() => {
+    if (!watchingRender) return
+    const timer = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/jobs/${jobId}`)
+        if (!res.ok) return
+        const data = await res.json()
+        setJob(data)
+        if (TERMINAL.includes(data.status)) setWatchingRender(false)
+      } catch {
+        // keep polling; the main loop surfaces persistent failures
+      }
+    }, POLL_MS)
+    return () => clearInterval(timer)
+  }, [watchingRender, jobId])
+
   // Load the frame manifest once the job has something to show.
-  const showable = job?.status && ['ready', 'rendered', 'rendering'].includes(job.status)
+  const showable = job?.status && SHOWABLE.includes(job.status)
   useEffect(() => {
     if (!showable) return
     let cancelled = false
@@ -39,9 +79,12 @@ export default function JobView({ jobId, onReset }) {
         setThumbs(frames.filter((_, i) => i % step === 0))
       })
       .catch(() => {})
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+    }
   }, [jobId, showable])
 
+  if (loadError && !job) return <div className="app"><p style={{ color: '#ff8f8f' }}>{loadError}</p></div>
   if (!job) return <div className="app"><p>Loading…</p></div>
 
   const duration = job.meta?.duration_s || 0
@@ -66,15 +109,17 @@ export default function JobView({ jobId, onReset }) {
   }
 
   async function startRender() {
-    await fetch(`/api/jobs/${jobId}/render`, { method: 'POST' })
-    const timer = setInterval(async () => {
-      const res = await fetch(`/api/jobs/${jobId}`)
-      if (res.ok) {
-        const data = await res.json()
-        setJob(data)
-        if (TERMINAL.includes(data.status)) clearInterval(timer)
+    setSaveError(null)
+    try {
+      const res = await fetch(`/api/jobs/${jobId}/render`, { method: 'POST' })
+      if (!res.ok) {
+        setSaveError('Render failed to start')
+        return
       }
-    }, POLL_MS)
+      setWatchingRender(true)
+    } catch {
+      setSaveError('Render failed to start — network error')
+    }
   }
 
   function startEdit() {
@@ -84,7 +129,9 @@ export default function JobView({ jobId, onReset }) {
   }
 
   function updateDraft(i, field, value) {
-    const next = draft.map((s, j) => (j === i ? { ...s, [field]: value } : s))
+    const parsed = parseFloat(value)
+    if (Number.isNaN(parsed)) return // partial input ("" / "-") — wait for a real number
+    const next = draft.map((s, j) => (j === i ? { ...s, [field]: parsed } : s))
     setDraft(next)
   }
 
@@ -122,7 +169,7 @@ export default function JobView({ jobId, onReset }) {
     setEditing(false)
   }
 
-  const showPlayer = ['ready', 'rendered', 'rendering'].includes(job.status)
+  const showPlayer = SHOWABLE.includes(job.status)
 
   return (
     <div className="app">
@@ -130,6 +177,7 @@ export default function JobView({ jobId, onReset }) {
       {busy && (
         <p className="muted">
           {job.progress || 'working…'}
+          {loadError && <span style={{ color: '#ff8f8f' }}> ({loadError})</span>}
           {progressFrac !== null && (
             <span className="progressbar">
               <span style={{ width: `${Math.round(progressFrac * 100)}%` }} />
@@ -212,11 +260,11 @@ export default function JobView({ jobId, onReset }) {
                   <li key={i} className="edit-row">
                     <label>
                       start <input type="number" step="0.1" min="0" max={duration} value={s.start_s}
-                        onChange={(e) => updateDraft(i, 'start_s', parseFloat(e.target.value))} />
+                        onChange={(e) => updateDraft(i, 'start_s', e.target.value)} />
                     </label>
                     <label>
                       end <input type="number" step="0.1" min="0" max={duration} value={s.end_s}
-                        onChange={(e) => updateDraft(i, 'end_s', parseFloat(e.target.value))} />
+                        onChange={(e) => updateDraft(i, 'end_s', e.target.value)} />
                     </label>
                     <span className="muted">{(Math.max(0, s.end_s - s.start_s)).toFixed(1)}s</span>
                     <button className="icon" onClick={() => removeDraft(i)}>✕</button>
@@ -248,6 +296,7 @@ export default function JobView({ jobId, onReset }) {
                 {job.status === 'rendering' && <button disabled>Rendering…</button>}{' '}
                 <button className="secondary" onClick={startEdit}>Edit segments</button>
               </p>
+              {saveError && <p style={{ color: '#ff8f8f' }}>{saveError}</p>}
               {job.has_render && (
                 <p>
                   <a
