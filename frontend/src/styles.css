@@ -164,3 +164,18 @@ button.icon {
   font-variant-numeric: tabular-nums;
   margin-right: 6px;
 }
+
+.filmstrip {
+  display: flex;
+  gap: 2px;
+  overflow-x: auto;
+  margin-top: 6px;
+  padding-bottom: 4px;
+}
+.filmstrip img {
+  height: 48px;
+  border-radius: 4px;
+  cursor: pointer;
+  opacity: 0.75;
+}
+.filmstrip img:hover { opacity: 1; }

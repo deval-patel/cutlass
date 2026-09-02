@@ -8,6 +8,7 @@ export default function JobView({ jobId, onReset }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState([])
   const [saveError, setSaveError] = useState(null)
+  const [thumbs, setThumbs] = useState([])
   const videoRef = useRef(null)
 
   useEffect(() => {
@@ -23,6 +24,23 @@ export default function JobView({ jobId, onReset }) {
     poll()
     return () => clearTimeout(timer)
   }, [jobId])
+
+  // Load the frame manifest once the job has something to show.
+  const showable = job?.status && ['ready', 'rendered', 'rendering'].includes(job.status)
+  useEffect(() => {
+    if (!showable) return
+    let cancelled = false
+    fetch(`/api/jobs/${jobId}/frames`)
+      .then((r) => (r.ok ? r.json() : []))
+      .then((frames) => {
+        if (cancelled) return
+        // Cap the strip at 30 evenly-spaced thumbs.
+        const step = Math.max(1, Math.ceil(frames.length / 30))
+        setThumbs(frames.filter((_, i) => i % step === 0))
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [jobId, showable])
 
   if (!job) return <div className="app"><p>Loading…</p></div>
 
@@ -159,6 +177,20 @@ export default function JobView({ jobId, onReset }) {
               />
             ))}
           </div>
+
+          {!editing && thumbs.length > 0 && (
+            <div className="filmstrip">
+              {thumbs.map((f) => (
+                <img
+                  key={f.file}
+                  src={`/api/jobs/${jobId}/frames/${f.file}`}
+                  alt={`${f.t}s`}
+                  title={`${f.t}s`}
+                  onClick={() => videoRef.current && (videoRef.current.currentTime = f.t)}
+                />
+              ))}
+            </div>
+          )}
 
           {!editing && notes.length > 0 && duration > 0 && (
             <div className="notestrip" title="AI frame labels — hover a tick for details">

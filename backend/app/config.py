@@ -27,4 +27,7 @@ DATA_DIR = Path(os.environ.get("CUTLASS_DATA", BASE_DIR / "data"))
 UPLOADS_DIR = DATA_DIR / "uploads"
 DB_PATH = DATA_DIR / "cutlass.db"
 
+MAX_UPLOAD_GB = float(os.environ.get("MAX_UPLOAD_GB", "2.0"))
+MAX_UPLOAD_BYTES = int(MAX_UPLOAD_GB * 1024**3)
+
 UPLOADS_DIR.mkdir(parents=True, exist_ok=True)

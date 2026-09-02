@@ -1,3 +1,4 @@
+import json
 import logging
 from pathlib import Path
 
@@ -20,6 +21,19 @@ def source_path(job_id: str) -> Path:
 
 def render_path(job_id: str) -> Path:
     return job_dir(job_id) / "final_cut.mp4"
+
+
+def frames_manifest(job_id: str) -> list[dict]:
+    """[{t, file}] for every sampled frame, or [] if sampling hasn't run."""
+    manifest = job_dir(job_id) / "frames.json"
+    if not manifest.exists():
+        return []
+    return json.loads(manifest.read_text())
+
+
+def _write_frames_manifest(job_id: str, frames: list[tuple[float, Path]]) -> None:
+    payload = [{"t": round(ts, 2), "file": p.name} for ts, p in frames]
+    (job_dir(job_id) / "frames.json").write_text(json.dumps(payload))
 
 
 def transcribe_audio(job_id: str, provider, duration_s: float) -> list[TranscriptLine]:
@@ -66,6 +80,7 @@ def run_pipeline(job_id: str) -> None:
         frames = ffmpeg.extract_frames(video, job_dir(job_id) / "frames", interval)
         if not frames:
             raise RuntimeError("no frames extracted; is the video valid?")
+        _write_frames_manifest(job_id, frames)
         storage.set_progress(job_id, f"extracted {len(frames)} frames")
 
         storage.set_status(job_id, "analyzing")

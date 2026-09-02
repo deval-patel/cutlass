@@ -20,11 +20,13 @@ export default function App() {
     body.append('video', file)
     const res = await fetch('/api/upload', { method: 'POST', body })
     if (!res.ok) {
-      setError('Upload failed')
+      const err = await res.json().catch(() => ({}))
+      setError(err.detail || 'Upload failed')
       return
     }
     const data = await res.json()
     setJobId(data.id)
+    refreshJobs()
   }
 
   if (jobId) return <JobView jobId={jobId} onReset={() => { setJobId(null); refreshJobs() }} />
