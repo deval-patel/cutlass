@@ -2,7 +2,7 @@ import json
 import sqlite3
 
 from .config import DB_PATH
-from .models import JobStatus, Segment, VideoMeta
+from .models import FrameNote, JobStatus, Segment, VideoMeta
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS jobs (
@@ -12,7 +12,9 @@ CREATE TABLE IF NOT EXISTS jobs (
     error TEXT,
     meta TEXT,
     segments TEXT,
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    progress TEXT,
+    notes TEXT
 );
 """
 
@@ -26,6 +28,12 @@ def _connect() -> sqlite3.Connection:
 def init_db() -> None:
     with _connect() as conn:
         conn.execute(_SCHEMA)
+        # Migrate DBs created before these columns existed.
+        for col in ("progress", "notes"):
+            try:
+                conn.execute(f"ALTER TABLE jobs ADD COLUMN {col} TEXT")
+            except sqlite3.OperationalError:
+                pass  # column already present
 
 
 def _row_to_job(row: sqlite3.Row) -> JobStatus:
@@ -33,6 +41,11 @@ def _row_to_job(row: sqlite3.Row) -> JobStatus:
     segments = (
         [Segment.model_validate(s) for s in json.loads(row["segments"])]
         if row["segments"]
+        else []
+    )
+    notes = (
+        [FrameNote.model_validate(n) for n in json.loads(row["notes"])]
+        if row["notes"]
         else []
     )
     return JobStatus(
@@ -44,6 +57,8 @@ def _row_to_job(row: sqlite3.Row) -> JobStatus:
         segments=segments,
         has_render=False,
         created_at=row["created_at"],
+        progress=row["progress"],
+        frame_notes=notes,
     )
 
 
@@ -79,6 +94,18 @@ def set_segments(job_id: str, segments: list[Segment]) -> None:
     payload = json.dumps([s.model_dump() for s in segments])
     with _connect() as conn:
         conn.execute("UPDATE jobs SET segments = ? WHERE id = ?", (payload, job_id))
+
+
+def set_progress(job_id: str, progress: str | None) -> None:
+    with _connect() as conn:
+        conn.execute("UPDATE jobs SET progress = ? WHERE id = ?", (progress, job_id))
+
+
+def set_notes(job_id: str, notes: list[FrameNote | dict]) -> None:
+    models = [n if isinstance(n, FrameNote) else FrameNote.model_validate(n) for n in notes]
+    payload = json.dumps([n.model_dump() for n in models])
+    with _connect() as conn:
+        conn.execute("UPDATE jobs SET notes = ? WHERE id = ?", (payload, job_id))
 
 
 def get_job(job_id: str) -> JobStatus | None:

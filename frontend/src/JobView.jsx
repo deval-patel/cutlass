@@ -29,6 +29,10 @@ export default function JobView({ jobId, onReset }) {
   const duration = job.meta?.duration_s || 0
   const segments = job.segments || []
   const kept = segments.reduce((a, s) => a + (s.end_s - s.start_s), 0)
+  const notes = job.frame_notes || []
+  const busy = !TERMINAL.includes(job.status)
+  const chunkMatch = job.progress?.match(/(\d+)\/(\d+)/)
+  const progressFrac = chunkMatch ? parseInt(chunkMatch[1]) / parseInt(chunkMatch[2]) : null
 
   // Auto-skip cut ranges during playback.
   function onTimeUpdate() {
@@ -105,6 +109,16 @@ export default function JobView({ jobId, onReset }) {
   return (
     <div className="app">
       <h1>cutlass<span>.</span> <span className="status">{job.status}</span></h1>
+      {busy && (
+        <p className="muted">
+          {job.progress || 'working…'}
+          {progressFrac !== null && (
+            <span className="progressbar">
+              <span style={{ width: `${Math.round(progressFrac * 100)}%` }} />
+            </span>
+          )}
+        </p>
+      )}
       <p className="muted">
         {job.filename}
         {duration > 0 && ` — ${duration.toFixed(0)}s original`}
@@ -145,6 +159,19 @@ export default function JobView({ jobId, onReset }) {
               />
             ))}
           </div>
+
+          {!editing && notes.length > 0 && duration > 0 && (
+            <div className="notestrip" title="AI frame labels — hover a tick for details">
+              {notes.map((n, i) => (
+                <span
+                  key={i}
+                  className={`note ${n.label}`}
+                  style={{ left: `${(Math.min(n.timestamp_s, duration) / duration) * 100}%` }}
+                  title={`${n.timestamp_s.toFixed(1)}s [${n.label}] ${n.description}`}
+                />
+              ))}
+            </div>
+          )}
 
           {editing ? (
             <>

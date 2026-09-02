@@ -101,3 +101,40 @@ button.icon {
   color: #ff8f8f;
   padding: 4px 8px;
 }
+
+.progressbar {
+  display: inline-block;
+  vertical-align: middle;
+  width: 180px;
+  height: 6px;
+  margin-left: 10px;
+  border-radius: 4px;
+  background: #2a303c;
+  overflow: hidden;
+}
+.progressbar span {
+  display: block;
+  height: 100%;
+  background: #4f9cf9;
+}
+
+.notestrip {
+  position: relative;
+  height: 10px;
+  margin-top: 4px;
+  border-radius: 4px;
+  background: #1a1f29;
+}
+.notestrip .note {
+  position: absolute;
+  top: 1px;
+  bottom: 1px;
+  width: 3px;
+  border-radius: 2px;
+}
+.note.core { background: #2f8f5b; }
+.note.filler { background: #c9922a; }
+.note.dead_air { background: #5a6272; }
+.note.intro_outro { background: #4f9cf9; }
+.note.repetition { background: #8b5cf6; }
+.note.other { background: #8b93a3; }

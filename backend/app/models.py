@@ -32,3 +32,5 @@ class JobStatus(BaseModel):
     segments: list[Segment] = []
     has_render: bool = False
     created_at: Optional[str] = None
+    progress: Optional[str] = None
+    frame_notes: list[FrameNote] = []

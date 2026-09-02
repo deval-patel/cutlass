@@ -28,6 +28,7 @@ def run_pipeline(job_id: str) -> None:
         provider = get_provider()
         video = source_path(job_id)
 
+        storage.set_progress(job_id, "probing video")
         meta = ffmpeg.probe(video)
         storage.set_meta(job_id, meta)
 
@@ -39,17 +40,23 @@ def run_pipeline(job_id: str) -> None:
         frames = ffmpeg.extract_frames(video, job_dir(job_id) / "frames", interval)
         if not frames:
             raise RuntimeError("no frames extracted; is the video valid?")
+        storage.set_progress(job_id, f"extracted {len(frames)} frames")
 
         storage.set_status(job_id, "analyzing")
         notes = []
-        for i in range(0, len(frames), CHUNK_SIZE):
-            chunk = frames[i : i + CHUNK_SIZE]
+        chunks = range(0, len(frames), CHUNK_SIZE)
+        for i, start in enumerate(chunks):
+            storage.set_progress(job_id, f"analyzing chunk {i + 1}/{len(chunks)}")
+            chunk = frames[start : start + CHUNK_SIZE]
             notes.extend(provider.analyze_frames(chunk, meta.duration_s))
+        storage.set_notes(job_id, notes)
 
+        storage.set_progress(job_id, "selecting segments")
         segments = provider.select_segments(notes, meta.duration_s)
         if not segments:
             raise RuntimeError("model returned no keep-segments")
         storage.set_segments(job_id, segments)
+        storage.set_progress(job_id, None)
         storage.set_status(job_id, "ready")
     except Exception as exc:  # noqa: BLE001 — job isolation
         logger.exception("pipeline failed for job %s", job_id)
