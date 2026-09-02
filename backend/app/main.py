@@ -11,7 +11,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .db import migrations
 from .events import get_broker
-from .routers import videos
+from .routers import api_v1, events, videos
 from .services.queue import get_queue
 
 logging.basicConfig(level=logging.INFO)
@@ -39,6 +39,9 @@ app.add_middleware(
 )
 migrations.ensure_current()
 app.include_router(videos.router)
+app.include_router(events.legacy_router)
+app.include_router(api_v1.router)
+app.include_router(events.v1_router)
 
 
 @app.get("/api/health")

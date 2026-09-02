@@ -5,15 +5,12 @@ the cutover migration). These endpoints keep the exact legacy shapes so
 the existing frontend keeps working; new code builds on /api/v1.
 """
 
-import json
 import re
-from collections.abc import AsyncIterator
 from typing import Any
 
 from fastapi import APIRouter, Body, File, HTTPException, UploadFile
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse
 
-from ..events import TERMINAL_STATUSES, get_broker
 from ..models import Asset, Segment
 from ..repositories import assets as assets_repo
 from ..services import analyzer
@@ -63,37 +60,6 @@ def list_jobs() -> list[dict[str, Any]]:
 @router.get("/jobs/{job_id}")
 def get_status(job_id: str) -> Asset:
     return _asset_payload(job_id)
-
-
-@router.get("/jobs/{job_id}/events")
-async def job_events(job_id: str) -> StreamingResponse:
-    """Server-sent events for status/progress; closes on a terminal status."""
-    asset = assets_repo.get_asset(job_id)
-    if asset is None:
-        raise HTTPException(404, "job not found")
-
-    async def stream() -> AsyncIterator[str]:
-        broker = get_broker()
-        queue = broker.subscribe(job_id)
-        try:
-            # Sync late subscribers with current state before live events.
-            state = {"status": asset.status, "progress": asset.progress, "error": asset.error}
-            yield _sse(state)
-            if asset.status in TERMINAL_STATUSES:
-                return
-            while True:
-                event = await queue.get()
-                yield _sse(event.payload())
-                if event.status in TERMINAL_STATUSES:
-                    return
-        finally:
-            broker.unsubscribe(job_id, queue)
-
-    return StreamingResponse(stream(), media_type="text/event-stream")
-
-
-def _sse(payload: dict[str, str | None]) -> str:
-    return f"data: {json.dumps(payload)}\n\n"
 
 
 @router.put("/jobs/{job_id}/segments")

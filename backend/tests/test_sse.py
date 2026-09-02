@@ -15,7 +15,7 @@ import time
 from app.events import get_broker
 from app.repositories import assets as assets_repo
 from app.repositories import projects as projects_repo
-from app.routers.videos import job_events
+from app.routers.events import asset_events
 
 
 def _parse_events(raw: str) -> list[dict[str, str | None]]:
@@ -50,7 +50,7 @@ def test_events_stream_live_updates_until_terminal(client):
         broker = get_broker()
         broker.set_loop(asyncio.get_running_loop())
         try:
-            response = await job_events("evt-live")
+            response = await asset_events("evt-live")
             collected: list[str] = []
 
             def drive() -> None:
