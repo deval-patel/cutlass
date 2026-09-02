@@ -1,6 +1,6 @@
 # Plan 1 — Core Architecture for Scale
 
-**Status: planned.** Prerequisite for the editor (Plan 3) and style-v2 (Plan 4); strongly recommended before Plan 2's API surface grows.
+**Status: in-progress (started Sept 2026).** Prerequisite for the editor (Plan 3) and style-v2 (Plan 4); strongly recommended before Plan 2's API surface grows. Task 1 uses the migration approach recorded in ADR-0003.
 
 ## Goal
 

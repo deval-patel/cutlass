@@ -1,6 +1,6 @@
 # ADR 0002: OTIO-inspired timeline JSON as the canonical edit format
 
-- **Status:** Proposed (to be finalized at the start of Plan 1)
+- **Status:** Accepted (Plan 1 implementation start)
 - **Date:** 2026-09-02
 - **Deciders:** maintainer + agent
 
