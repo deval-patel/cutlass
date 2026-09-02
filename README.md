@@ -13,7 +13,9 @@ Roadmap and architecture plans live in [`docs/ROADMAP.md`](docs/ROADMAP.md).
 - **Timeline preview** — the player auto-skips cut ranges; filmstrip thumbnails and an AI frame-label strip sit under the timeline
 - **Editable EDL** — tweak segment boundaries, add/remove segments; the model's draft is just a starting point
 - **Render** — ffmpeg physically produces `final_cut.mp4` for download; re-render after edits
-- **Job history** — every upload is listed on the home page and can be reopened
+- **Projects** — every upload is a project (assets → timeline with version history); deleting a project removes its rows and files
+- **Durable jobs** — a worker queue with crash recovery (killed mid-analysis? work resumes on restart) and SSE progress updates
+- **API** — `/api/v1` (projects, assets, timeline documents); the legacy `/api` endpoints keep working as a compatibility shim
 
 ## Pipeline
 

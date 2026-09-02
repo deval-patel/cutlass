@@ -18,6 +18,16 @@ def test_index_and_assets_served(client):
     assert "text/html" in index.headers["content-type"]
 
 
+def test_deep_links_serve_the_app_shell(client):
+    """The frontend routes client-side; /p/{id} must return index.html."""
+    deep = client.get("/p/some-project-id")
+    assert deep.status_code == 200
+    assert 'id="root"' in deep.text
+    # API paths are never swallowed by the SPA fallback.
+    assert client.get("/api/jobs/nope").status_code == 404
+    assert client.get("/api/v1/projects/nope").status_code == 404
+
+
 def test_bundled_asset_reachable(client):
     index = client.get("/").text
     import re

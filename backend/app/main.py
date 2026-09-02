@@ -4,7 +4,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -55,6 +55,10 @@ _dist = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
 if _dist.exists():
     app.mount("/assets", StaticFiles(directory=_dist / "assets"), name="assets")
 
-    @app.get("/")
-    def index() -> FileResponse:
+    @app.get("/{full_path:path}")
+    def spa(full_path: str) -> FileResponse:
+        """Serve the app shell for any non-API path (the frontend routes
+        client-side, so deep links like /p/{id} must return index.html)."""
+        if full_path.startswith(("api/", "assets/")):
+            raise HTTPException(404)
         return FileResponse(_dist / "index.html")
