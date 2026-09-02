@@ -50,3 +50,28 @@ class JobStatus(BaseModel):
     progress: str | None = None
     frame_notes: list[FrameNote] = []
     transcript: list[TranscriptLine] = []
+
+
+class Asset(JobStatus):
+    """An ingested source file plus its analysis (Plan 1 successor of JobStatus).
+
+    Lives in a project; the pre-Plan-1 'job' becomes exactly this.
+    """
+
+    project_id: str
+
+
+class Project(BaseModel):
+    id: str
+    name: str
+    user_id: str | None = None
+    created_at: str | None = None
+
+
+class ProjectSummary(BaseModel):
+    id: str
+    name: str
+    created_at: str | None = None
+    assets: int = 0
+    duration_s: float | None = None
+    timeline_id: str | None = None

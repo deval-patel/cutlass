@@ -6,6 +6,10 @@ from pathlib import Path
 from app.db import connections, migrations
 
 
+def _expected_versions() -> list[str]:
+    return sorted(path.stem.split("_", 1)[0] for path in migrations.MIGRATIONS_DIR.glob("*.sql"))
+
+
 def _jobs_columns(db: Path) -> set[str]:
     conn = connections.connect(db)
     try:
@@ -17,7 +21,7 @@ def _jobs_columns(db: Path) -> set[str]:
 def test_fresh_database_applies_all_migrations(tmp_path: Path):
     db = tmp_path / "fresh.db"
     applied = migrations.ensure_current(db)
-    assert applied == ["0001", "0002"]
+    assert applied == _expected_versions()
     assert "user_id" in _jobs_columns(db)
 
 
@@ -38,6 +42,6 @@ def test_legacy_database_is_stamped_and_upgraded(tmp_path: Path):
     conn.close()
 
     applied = migrations.ensure_current(db)
-    assert applied == ["0002"]  # baseline stamped as applied, only the delta runs
+    assert applied == _expected_versions()[1:]  # baseline stamped, only deltas run
     assert "user_id" in _jobs_columns(db)
     assert migrations.ensure_current(db) == []

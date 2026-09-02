@@ -65,11 +65,13 @@ def test_video() -> Path:
 @pytest.fixture()
 def client():
     from app.repositories import jobs as jobs_repo
+    from app.repositories import projects as projects_repo
 
     storage_dir = Path(os.environ["CUTLASS_DATA"]) / "uploads"
-    # Fresh uploads + jobs per test keeps tests isolated.
+    # Fresh uploads + rows per test keeps tests isolated.
     if storage_dir.exists():
         shutil.rmtree(storage_dir)
+    projects_repo.delete_all_projects()  # cascades to assets/timelines
     jobs_repo.delete_all_jobs()
     with TestClient(app) as c:
         yield c

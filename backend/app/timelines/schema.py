@@ -52,6 +52,17 @@ class Timeline(BaseModel):
     tracks: list[Track] = []
 
 
+class TimelineInfo(BaseModel):
+    """API envelope: a stored timeline with identity and version."""
+
+    id: str
+    project_id: str
+    name: str
+    version: int
+    document: Timeline
+    updated_at: str | None = None
+
+
 def duration_s(timeline: Timeline) -> float:
     """Total record duration across all tracks (max record end)."""
     end = 0.0
