@@ -1,0 +1,10 @@
+{
+  "preset_id": "default",
+  "name": "Auto",
+  "description": "Balanced first cut: drops dead air, filler, intros/outros, and repetition without imposing a pacing opinion.",
+  "pacing": "natural",
+  "style": {
+    "cut_on": "sentence",
+    "guidance": "Produce a coherent watchable cut: keep meaningful content, cut dead air, filler, intros/outros, and repetition. No strong pacing preference."
+  }
+}

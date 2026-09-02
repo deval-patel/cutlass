@@ -1,0 +1,15 @@
+{
+  "preset_id": "cinematic",
+  "name": "Cinematic",
+  "description": "Long, breathing takes. Sweeping shots, natural sound, minimal jump-cutting — feels like film, not a feed.",
+  "pacing": "slow · 8-60s takes",
+  "style": {
+    "target_retention": 0.5,
+    "target_segment_len_s": 20.0,
+    "min_segment_s": 8.0,
+    "max_segment_s": 60.0,
+    "max_segment_count": 40,
+    "cut_on": "shot",
+    "guidance": "Let shots breathe. Prefer long uninterrupted takes with beautiful light or motion; cut only when the visual beat truly changes. Avoid choppiness at all costs."
+  }
+}

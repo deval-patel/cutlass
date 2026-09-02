@@ -1,0 +1,15 @@
+{
+  "preset_id": "vlog",
+  "name": "Vlog",
+  "description": "Classic talking-head vlog rhythm: keeps the personality, trims the dead weight.",
+  "pacing": "medium · 3-45s segments",
+  "style": {
+    "target_retention": 0.6,
+    "target_segment_len_s": 12.0,
+    "min_segment_s": 3.0,
+    "max_segment_s": 45.0,
+    "max_segment_count": 40,
+    "cut_on": "sentence",
+    "guidance": "Keep the creator's personality and story arc intact — trim silences, false starts, and wandering tangents. Conversational flow matters more than density."
+  }
+}

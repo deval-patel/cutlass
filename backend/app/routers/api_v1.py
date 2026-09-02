@@ -16,6 +16,8 @@ from ..repositories import timelines as timelines_repo
 from ..services import analyzer
 from ..services.ingest import ingest_upload
 from ..services.queue import get_queue
+from ..styles import presets as styles_repo
+from ..styles.models import PresetSummary
 from ..timelines.schema import Timeline, TimelineInfo, validate
 
 router = APIRouter(prefix="/api/v1")
@@ -25,6 +27,12 @@ _FRAME_NAME = re.compile(r"^frame_\d{6}\.jpg$")
 
 class CreateProjectRequest(BaseModel):
     name: str = Field(min_length=1, max_length=200)
+
+
+@router.get("/styles")
+def list_styles() -> list[PresetSummary]:
+    """The editorial style preset gallery."""
+    return styles_repo.list_presets()
 
 
 class ProjectDetail(BaseModel):

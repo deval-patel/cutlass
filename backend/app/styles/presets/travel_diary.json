@@ -1,0 +1,15 @@
+{
+  "preset_id": "travel_diary",
+  "name": "Travel diary",
+  "description": "Chronological montage of places and moments — the trip retold in order.",
+  "pacing": "medium · 2-25s segments",
+  "style": {
+    "target_retention": 0.45,
+    "target_segment_len_s": 8.0,
+    "min_segment_s": 2.0,
+    "max_segment_s": 25.0,
+    "max_segment_count": 50,
+    "cut_on": "shot",
+    "guidance": "Tell the trip in order: each location gets its moment. Prefer visually distinct shots (landmarks, food, transit, people) and transition on movement. Narration, when present, carries structure."
+  }
+}
