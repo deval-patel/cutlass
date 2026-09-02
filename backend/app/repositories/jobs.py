@@ -10,6 +10,7 @@ from collections.abc import Sequence
 from typing import Any, cast
 
 from ..db import connections
+from ..events import JobEvent, get_broker
 from ..models import FrameNote, JobStatus, JobStatusValue, Segment, TranscriptLine, VideoMeta
 
 
@@ -75,6 +76,7 @@ def set_status(job_id: str, status: str, error: str | None = None) -> None:
         _execute("UPDATE jobs SET status = ?, error = ? WHERE id = ?", (status, error, job_id))
     else:
         _execute("UPDATE jobs SET status = ? WHERE id = ?", (status, job_id))
+    get_broker().publish(JobEvent(job_id, status=status, error=error))
 
 
 def set_meta(job_id: str, meta: VideoMeta) -> None:
@@ -88,6 +90,7 @@ def set_segments(job_id: str, segments: Sequence[Segment]) -> None:
 
 def set_progress(job_id: str, progress: str | None) -> None:
     _execute("UPDATE jobs SET progress = ? WHERE id = ?", (progress, job_id))
+    get_broker().publish(JobEvent(job_id, progress=progress))
 
 
 def set_notes(job_id: str, notes: Sequence[FrameNote | dict[str, Any]]) -> None:

@@ -1,12 +1,15 @@
+import json
 import re
 import uuid
+from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Body, File, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 
 from .. import config
+from ..events import TERMINAL_STATUSES, get_broker
 from ..models import JobStatus, Segment
 from ..repositories import jobs as jobs_repo
 from ..services import analyzer, ffmpeg
@@ -89,6 +92,37 @@ def list_jobs() -> list[dict[str, Any]]:
 @router.get("/jobs/{job_id}")
 def get_status(job_id: str) -> JobStatus:
     return _job_payload(job_id)
+
+
+@router.get("/jobs/{job_id}/events")
+async def job_events(job_id: str) -> StreamingResponse:
+    """Server-sent events for status/progress; closes on a terminal status."""
+    job = jobs_repo.get_job(job_id)
+    if job is None:
+        raise HTTPException(404, "job not found")
+
+    async def stream() -> AsyncIterator[str]:
+        broker = get_broker()
+        queue = broker.subscribe(job_id)
+        try:
+            # Sync late subscribers with current state before live events.
+            state = {"status": job.status, "progress": job.progress, "error": job.error}
+            yield _sse(state)
+            if job.status in TERMINAL_STATUSES:
+                return
+            while True:
+                event = await queue.get()
+                yield _sse(event.payload())
+                if event.status in TERMINAL_STATUSES:
+                    return
+        finally:
+            broker.unsubscribe(job_id, queue)
+
+    return StreamingResponse(stream(), media_type="text/event-stream")
+
+
+def _sse(payload: dict[str, str | None]) -> str:
+    return f"data: {json.dumps(payload)}\n\n"
 
 
 @router.put("/jobs/{job_id}/segments")

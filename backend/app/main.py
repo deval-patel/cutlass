@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -9,6 +10,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from .db import migrations
+from .events import get_broker
 from .routers import videos
 from .services.queue import get_queue
 
@@ -19,11 +21,13 @@ logging.basicConfig(level=logging.INFO)
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     """Start the worker queue (recovering work stranded by a crash) and stop
     it cleanly on shutdown, letting in-flight tasks finish."""
+    get_broker().set_loop(asyncio.get_running_loop())
     job_queue = get_queue()
     job_queue.recover_pending()
     job_queue.start()
     yield
     job_queue.stop()
+    get_broker().set_loop(None)
 
 
 app = FastAPI(title="Cutlass", lifespan=lifespan)
