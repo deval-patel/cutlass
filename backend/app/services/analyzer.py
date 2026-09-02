@@ -6,6 +6,7 @@ project's timeline document (seeded from the draft EDL when missing).
 
 import json
 import logging
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -119,6 +120,9 @@ def transcribe_audio(
 def run_pipeline(asset_id: str) -> None:
     """Full analysis: probe → sample → chunked analysis → global pass → EDL → timeline."""
     try:
+        if assets_repo.get_asset(asset_id) is None:
+            logger.warning("asset %s vanished before analysis; skipping", asset_id)
+            return
         provider = get_provider()
         video = source_path(asset_id)
 
@@ -163,6 +167,8 @@ def run_pipeline(asset_id: str) -> None:
             raise RuntimeError("model returned no keep-segments")
         assets_repo.set_segments(asset_id, segments)
         sync_timeline_from_draft(asset_id)
+        # Transcription chunks were scratch space; the transcript is stored.
+        shutil.rmtree(asset_dir(asset_id) / "audio", ignore_errors=True)
         assets_repo.set_progress(asset_id, None)
         assets_repo.set_status(asset_id, "ready")
     except Exception as exc:
@@ -198,7 +204,8 @@ def run_render(asset_id: str) -> None:
     try:
         asset = assets_repo.get_asset(asset_id)
         if asset is None:
-            raise RuntimeError(f"unknown asset {asset_id}")
+            logger.warning("asset %s vanished before render; skipping", asset_id)
+            return
         assets_repo.set_status(asset_id, "rendering")
 
         _, _, document = get_or_seed_timeline(asset.project_id)

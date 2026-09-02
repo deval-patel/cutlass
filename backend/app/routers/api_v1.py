@@ -1,6 +1,7 @@
 """The /api/v1 surface: projects, assets, and timeline documents."""
 
 import re
+import shutil
 import uuid
 from typing import Any
 
@@ -83,6 +84,16 @@ def get_project(project_id: str) -> ProjectDetail:
         # valid state for a fresh project.
         pass
     return ProjectDetail(project=project, assets=assets, timeline=timeline)
+
+
+@router.delete("/projects/{project_id}")
+def delete_project(project_id: str) -> dict[str, bool]:
+    """Delete the project, its rows (FK cascade), and all artifact files."""
+    _get_project(project_id)
+    for asset in assets_repo.list_assets(project_id):
+        shutil.rmtree(analyzer.asset_dir(asset.id), ignore_errors=True)
+    projects_repo.delete_project(project_id)
+    return {"deleted": True}
 
 
 @router.post("/projects/{project_id}/assets")
