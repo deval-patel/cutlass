@@ -1,12 +1,24 @@
 import uuid
 
-from fastapi import APIRouter, BackgroundTasks, File, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Body, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 
 from .. import storage
+from ..models import Segment
 from ..services import analyzer
+from ..services.edl import normalize_segments
 
 router = APIRouter(prefix="/api")
+
+EDITABLE_STATUSES = {"ready", "rendered"}
+
+
+def _job_payload(job_id: str):
+    job = storage.get_job(job_id)
+    if job is None:
+        raise HTTPException(404, "job not found")
+    job.has_render = analyzer.render_path(job_id).exists()
+    return job
 
 
 @router.post("/upload")
@@ -25,11 +37,25 @@ async def upload(video: UploadFile = File(...), background: BackgroundTasks = No
 
 @router.get("/jobs/{job_id}")
 def get_status(job_id: str):
-    job = storage.get_job(job_id)
-    if job is None:
-        raise HTTPException(404, "job not found")
-    job.has_render = analyzer.render_path(job_id).exists()
-    return job
+    return _job_payload(job_id)
+
+
+@router.put("/jobs/{job_id}/segments")
+def update_segments(job_id: str, segments: list[Segment] = Body(...)):
+    job = _job_payload(job_id)
+    if job.status not in EDITABLE_STATUSES:
+        raise HTTPException(409, f"cannot edit segments while status is '{job.status}'")
+    if job.meta is None:
+        raise HTTPException(409, "video metadata missing")
+    normalized = normalize_segments(segments, job.meta.duration_s)
+    if not normalized:
+        raise HTTPException(422, "no valid segments after normalization")
+    storage.set_segments(job_id, normalized)
+    render = analyzer.render_path(job_id)
+    if render.exists():
+        render.unlink()
+    storage.set_status(job_id, "ready")
+    return _job_payload(job_id)
 
 
 @router.get("/jobs/{job_id}/source")

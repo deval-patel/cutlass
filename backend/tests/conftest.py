@@ -1,0 +1,66 @@
+import os
+import shutil
+import subprocess
+import tempfile
+from pathlib import Path
+
+import pytest
+
+# Configure the app environment before any app module is imported.
+_TMP = tempfile.mkdtemp(prefix="cutlass-test-")
+os.environ["DRY_RUN"] = "1"
+os.environ["CUTLASS_DATA"] = _TMP
+
+from fastapi.testclient import TestClient  # noqa: E402
+
+from app.main import app  # noqa: E402
+
+pytestmark = pytest.mark.skipif(
+    shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None,
+    reason="ffmpeg/ffprobe not on PATH",
+)
+
+
+@pytest.fixture(scope="session")
+def test_video() -> Path:
+    """Generate a 10s test clip once per session."""
+    path = Path(_TMP) / "test_video.mp4"
+    subprocess.run(
+        [
+            "ffmpeg", "-y", "-v", "error",
+            "-f", "lavfi", "-i", "testsrc=duration=10:size=640x360:rate=24",
+            "-f", "lavfi", "-i", "sine=frequency=440:duration=10",
+            "-c:v", "libx264", "-c:a", "aac", "-pix_fmt", "yuv420p",
+            str(path),
+        ],
+        check=True,
+    )
+    return path
+
+
+@pytest.fixture()
+def client():
+    storage_dir = Path(os.environ["CUTLASS_DATA"]) / "uploads"
+    # Fresh uploads per test keeps jobs isolated.
+    if storage_dir.exists():
+        shutil.rmtree(storage_dir)
+    with TestClient(app) as c:
+        yield c
+
+
+def wait_for_status(client: TestClient, job_id: str, statuses: set[str], timeout_s: float = 60):
+    import time
+    deadline = time.time() + timeout_s
+    while time.time() < deadline:
+        job = client.get(f"/api/jobs/{job_id}").json()
+        if job["status"] in statuses:
+            return job
+        time.sleep(0.2)
+    raise AssertionError(f"timed out waiting for {statuses}; last: {job}")
+
+
+def upload_and_wait(client: TestClient, video: Path) -> dict:
+    with video.open("rb") as f:
+        res = client.post("/api/upload", files={"video": ("test.mp4", f)})
+    assert res.status_code == 200, res.text
+    return wait_for_status(client, res.json()["id"], {"ready", "failed"})

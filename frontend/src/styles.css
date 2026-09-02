@@ -79,3 +79,24 @@ button {
   cursor: pointer;
 }
 button:disabled { background: #3a4150; color: #8b93a3; cursor: default; }
+button.secondary { background: #3a4150; color: #e6e8ec; }
+
+.segments li.edit-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.segments li.edit-row label { display: flex; gap: 6px; align-items: center; }
+.segments input[type="number"] {
+  width: 80px;
+  background: #0f1115;
+  color: #e6e8ec;
+  border: 1px solid #3a4150;
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+button.icon {
+  background: transparent;
+  color: #ff8f8f;
+  padding: 4px 8px;
+}
