@@ -1,6 +1,20 @@
 # Plan 1 — Core Architecture for Scale
 
-**Status: in-progress (started Sept 2026).** Prerequisite for the editor (Plan 3) and style-v2 (Plan 4); strongly recommended before Plan 2's API surface grows. Task 1 uses the migration approach recorded in ADR-0003.
+**Status: ✅ implemented (Sept 2026).** Prerequisite for the editor (Plan 3) and style-v2 (Plan 4); strongly recommended before Plan 2's API surface grows.
+
+**Implementation notes / deviations:**
+- Migrations use the lightweight SQL runner from ADR-0003 instead of Alembic.
+- Zustand is **not** installed yet: it lands with Plan 3's editor store (adding a dependency with no consumer would be dead weight); TanStack Query + component state cover Plan 1's needs.
+- "Preview consumes the timeline" is honored through the draft-sync invariant (every write site updates the EDL and the timeline together); the true timeline-time program monitor is Plan 3's MediaPlayer generalization.
+- Multi-asset *rendering* intentionally errors clearly ("arrives with Plan 3"); multi-asset *storage/API* works today.
+
+**Acceptance criteria — how each was verified:**
+- Existing flows unchanged through new API → legacy `/api` suite (upload → edit → render → download) passes byte-for-byte on the compat shim.
+- Timelines versioned, history never lost → `test_domain_repos.py` (restore appends versions), `test_api_v1.py` (edit/restore cycle).
+- Killed server mid-analysis resumes → `test_recovery.py` (stranded `analyzing` asset finishes on app restart).
+- No SQL outside repositories → repository modules; nothing else imports `sqlite3` for data access.
+- No inline fetch in components → all pages go through `features/projects/queries.ts`; generated types from OpenAPI (`npm run gen:api`) make drift a compile error.
+- Concurrent writes never lock → WAL + busy_timeout + `test_concurrency.py` (4 threads × 25 writes).
 
 ## Goal
 
