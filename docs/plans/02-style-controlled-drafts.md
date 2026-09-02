@@ -1,6 +1,6 @@
 # Plan 2 — Style-Controlled AI Drafts
 
-**Status: planned.** First feature project after Plan 1. Research basis: [`editing-style-techniques.md`](../research/editing-style-techniques.md).
+**Status: in-progress (started Sept 2026).** First feature project after Plan 1. Research basis: [`editing-style-techniques.md`](../research/editing-style-techniques.md).
 
 ## Goal
 
