@@ -239,3 +239,34 @@ button.icon {
 .filmstrip img:hover {
   opacity: 1;
 }
+
+.style-panel {
+  margin: 16px 0;
+  padding: 12px;
+  border: 1px solid #2a3040;
+  border-radius: 8px;
+  background: #151922;
+}
+.style-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.style-row select {
+  background: #0f1115;
+  color: #e6e8ec;
+  border: 1px solid #3a4150;
+  border-radius: 6px;
+  padding: 4px 8px;
+}
+.style-panel textarea {
+  width: 100%;
+  box-sizing: border-box;
+  background: #0f1115;
+  color: #e6e8ec;
+  border: 1px solid #3a4150;
+  border-radius: 6px;
+  padding: 6px 8px;
+  resize: vertical;
+}

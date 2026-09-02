@@ -1,6 +1,7 @@
-/** Typed fetch helpers + TanStack Query hooks for the backend API. */
+/** TanStack Query hooks for the backend API. */
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { jsonFetch } from '../../lib/api'
 import type { Asset, ProjectDetail, ProjectSummary, Segment, UploadResponse } from '../../types'
 
 export const queryKeys = {
@@ -10,24 +11,6 @@ export const queryKeys = {
 
 const POLL_MS = 2000
 const TERMINAL = ['ready', 'rendered', 'failed']
-
-export class ApiError extends Error {
-  constructor(
-    message: string,
-    readonly status: number,
-  ) {
-    super(message)
-  }
-}
-
-async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, init)
-  if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as { detail?: string }
-    throw new ApiError(body.detail || `request failed (HTTP ${res.status})`, res.status)
-  }
-  return (await res.json()) as T
-}
 
 export function useProjects() {
   return useQuery({
@@ -85,6 +68,27 @@ export function useStartRender(projectId: string) {
   })
 }
 
+export function useRedraft(projectId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({
+      assetId,
+      presetId,
+      userBrief,
+    }: {
+      assetId: string
+      presetId: string
+      userBrief: string
+    }) =>
+      jsonFetch<{ status: string }>(`/api/v1/assets/${assetId}/redraft`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ preset_id: presetId, user_brief: userBrief }),
+      }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.project(projectId) }),
+  })
+}
+
 export function useDeleteProject() {
   const queryClient = useQueryClient()
   return useMutation({
@@ -96,5 +100,3 @@ export function useDeleteProject() {
     },
   })
 }
-
-export { jsonFetch }

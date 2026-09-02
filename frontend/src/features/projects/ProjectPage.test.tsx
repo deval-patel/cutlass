@@ -27,6 +27,8 @@ const readyDetail: ProjectDetail = {
         { timestamp_s: 60, description: 'a temple', label: 'core' },
       ],
       transcript: [{ start_s: 0, end_s: 5, text: 'welcome to japan' }],
+      style_preset: 'default',
+      user_brief: '',
     },
   ],
   timeline: {

@@ -158,6 +158,26 @@ export interface paths {
     patch?: never
     trace?: never
   }
+  '/api/v1/styles': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    /**
+     * List Styles
+     * @description The editorial style preset gallery.
+     */
+    get: operations['list_styles_api_v1_styles_get']
+    put?: never
+    post?: never
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   '/api/v1/projects': {
     parameters: {
       query?: never
@@ -208,6 +228,26 @@ export interface paths {
     put?: never
     /** Upload Asset */
     post: operations['upload_asset_api_v1_projects__project_id__assets_post']
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
+  '/api/v1/assets/{asset_id}/redraft': {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /**
+     * Redraft Asset
+     * @description Re-run selection with a new style over cached analysis (no vision calls).
+     */
+    post: operations['redraft_asset_api_v1_assets__asset_id__redraft_post']
     delete?: never
     options?: never
     head?: never
@@ -389,15 +429,19 @@ export interface paths {
     patch?: never
     trace?: never
   }
-  '/': {
+  '/{full_path}': {
     parameters: {
       query?: never
       header?: never
       path?: never
       cookie?: never
     }
-    /** Index */
-    get: operations['index__get']
+    /**
+     * Spa
+     * @description Serve the app shell for any non-API path (the frontend routes
+     *     client-side, so deep links like /p/{id} must return index.html).
+     */
+    get: operations['spa__full_path__get']
     put?: never
     post?: never
     delete?: never
@@ -428,7 +472,15 @@ export interface components {
        * Status
        * @enum {string}
        */
-      status: 'uploaded' | 'sampling' | 'analyzing' | 'ready' | 'rendering' | 'rendered' | 'failed'
+      status:
+        | 'uploaded'
+        | 'sampling'
+        | 'analyzing'
+        | 'redrafting'
+        | 'ready'
+        | 'rendering'
+        | 'rendered'
+        | 'failed'
       /** Error */
       error?: string | null
       meta?: components['schemas']['VideoMeta'] | null
@@ -456,16 +508,46 @@ export interface components {
        * @default []
        */
       transcript: components['schemas']['TranscriptLine'][]
+      /**
+       * Style Preset
+       * @default default
+       */
+      style_preset: string
+      /**
+       * User Brief
+       * @default
+       */
+      user_brief: string
     }
     /** Body_upload_api_upload_post */
     Body_upload_api_upload_post: {
       /** Video */
       video: string
+      /**
+       * Style Preset
+       * @default default
+       */
+      style_preset: string
+      /**
+       * User Brief
+       * @default
+       */
+      user_brief: string
     }
     /** Body_upload_asset_api_v1_projects__project_id__assets_post */
     Body_upload_asset_api_v1_projects__project_id__assets_post: {
       /** Video */
       video: string
+      /**
+       * Style Preset
+       * @default default
+       */
+      style_preset: string
+      /**
+       * User Brief
+       * @default
+       */
+      user_brief: string
     }
     /** Clip */
     Clip: {
@@ -515,6 +597,31 @@ export interface components {
       /** Name */
       name: string
     }
+    /**
+     * DraftMeta
+     * @description Provenance of an AI-generated draft (Plan 2): which prompt and style
+     *     produced it, plus measured stats — every draft's 'why' is answerable.
+     */
+    DraftMeta: {
+      /** Prompt Version */
+      prompt_version: string
+      /**
+       * Style Preset
+       * @default default
+       */
+      style_preset: string
+      /**
+       * User Brief
+       * @default
+       */
+      user_brief: string
+      /** Retention */
+      retention?: number | null
+      /** Avg Segment S */
+      avg_segment_s?: number | null
+      /** Generated At */
+      generated_at?: string | null
+    }
     /** FrameNote */
     FrameNote: {
       /** Timestamp S */
@@ -535,6 +642,20 @@ export interface components {
     HTTPValidationError: {
       /** Detail */
       detail?: components['schemas']['ValidationError'][]
+    }
+    /**
+     * PresetSummary
+     * @description API-facing preset card.
+     */
+    PresetSummary: {
+      /** Preset Id */
+      preset_id: string
+      /** Name */
+      name: string
+      /** Description */
+      description: string
+      /** Pacing */
+      pacing: string
     }
     /** Project */
     Project: {
@@ -571,6 +692,22 @@ export interface components {
       duration_s?: number | null
       /** Timeline Id */
       timeline_id?: string | null
+    }
+    /**
+     * RedraftRequest
+     * @description Re-run segment selection over cached analysis with a new style.
+     */
+    RedraftRequest: {
+      /**
+       * Preset Id
+       * @default default
+       */
+      preset_id: string
+      /**
+       * User Brief
+       * @default
+       */
+      user_brief: string
     }
     /**
      * Segment
@@ -611,6 +748,7 @@ export interface components {
        * @default []
        */
       tracks: components['schemas']['Track'][]
+      meta?: components['schemas']['DraftMeta'] | null
     }
     /**
      * TimelineInfo
@@ -1015,6 +1153,26 @@ export interface operations {
       }
     }
   }
+  list_styles_api_v1_styles_get: {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    requestBody?: never
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['PresetSummary'][]
+        }
+      }
+    }
+  }
   list_projects_api_v1_projects_get: {
     parameters: {
       query?: {
@@ -1166,6 +1324,43 @@ export interface operations {
         }
         content: {
           'application/json': components['schemas']['Asset']
+        }
+      }
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['HTTPValidationError']
+        }
+      }
+    }
+  }
+  redraft_asset_api_v1_assets__asset_id__redraft_post: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        asset_id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['RedraftRequest']
+      }
+    }
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': {
+            [key: string]: string
+          }
         }
       }
       /** @description Validation Error */
@@ -1554,11 +1749,13 @@ export interface operations {
       }
     }
   }
-  index__get: {
+  spa__full_path__get: {
     parameters: {
       query?: never
       header?: never
-      path?: never
+      path: {
+        full_path: string
+      }
       cookie?: never
     }
     requestBody?: never
@@ -1570,6 +1767,15 @@ export interface operations {
         }
         content: {
           'application/json': unknown
+        }
+      }
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          'application/json': components['schemas']['HTTPValidationError']
         }
       }
     }

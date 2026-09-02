@@ -5,9 +5,10 @@ import { useQueryClient } from '@tanstack/react-query'
 import MediaPlayer from '../../components/MediaPlayer'
 import { fmtSeconds, isTerminal } from '../../lib/status'
 import type { Asset, FrameManifestItem, ProjectDetail, Segment } from '../../types'
+import StylePanel from './StylePanel'
 import { queryKeys, useDeleteProject, useProject, useSaveSegments, useStartRender } from './queries'
 
-const SHOWABLE: Asset['status'][] = ['ready', 'rendered', 'rendering']
+const SHOWABLE: Asset['status'][] = ['ready', 'rendered', 'rendering', 'redrafting']
 
 export default function ProjectPage() {
   const { projectId = '' } = useParams()
@@ -70,7 +71,13 @@ export default function ProjectPage() {
       </h1>
 
       {primary ? (
-        <AssetPanel asset={primary} videoRef={videoRef} thumbs={thumbs} projectId={projectId} />
+        <AssetPanel
+          asset={primary}
+          videoRef={videoRef}
+          thumbs={thumbs}
+          projectId={projectId}
+          timeline={detail.timeline}
+        />
       ) : (
         <p className="muted">This project has no assets yet.</p>
       )}
@@ -106,8 +113,9 @@ function AssetPanel(props: {
   projectId: string
   videoRef: RefObject<HTMLVideoElement>
   thumbs: FrameManifestItem[]
+  timeline: ProjectDetail['timeline']
 }) {
-  const { asset, projectId, videoRef, thumbs } = props
+  const { asset, projectId, videoRef, thumbs, timeline } = props
   const saveSegments = useSaveSegments(projectId)
   const startRender = useStartRender(projectId)
   const [editing, setEditing] = useState(false)
@@ -184,6 +192,17 @@ function AssetPanel(props: {
         {duration > 0 && ` — ${duration.toFixed(0)}s original`}
         {kept > 0 && ` → ${kept.toFixed(0)}s kept (${Math.round((kept / duration) * 100)}%)`}
       </p>
+
+      {showPlayer && (
+        <>
+          <p className="muted">
+            {timeline?.document.meta
+              ? `Draft: ${timeline.document.meta.style_preset} · prompt ${timeline.document.meta.prompt_version} · avg segment ${timeline.document.meta.avg_segment_s?.toFixed(1) ?? '?'}s`
+              : 'Draft: original analysis'}
+          </p>
+          <StylePanel asset={asset} />
+        </>
+      )}
 
       {asset.status === 'failed' && (
         <p style={{ color: '#ff8f8f' }}>Analysis failed: {asset.error}</p>
