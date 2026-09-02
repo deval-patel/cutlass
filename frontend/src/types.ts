@@ -1,60 +1,20 @@
-// API payload shapes — mirror backend/app/models.py. Generated from the
-// OpenAPI schema once Plan 1 lands; hand-maintained until then.
+// API payload shapes, generated from the backend's OpenAPI schema
+// (src/api/schema.d.ts — regenerate with `npm run gen:api`). Hand-written
+// types below cover the few endpoints that return untyped dicts.
 
-export type JobStatusValue =
-  'uploaded' | 'sampling' | 'analyzing' | 'ready' | 'rendering' | 'rendered' | 'failed'
+import type { components } from './api/schema'
 
-export type FrameNoteLabel = 'core' | 'filler' | 'dead_air' | 'intro_outro' | 'repetition' | 'other'
-
-export interface Segment {
-  start_s: number
-  end_s: number
-  reason: string
-  confidence: number
-}
-
-export interface FrameNoteItem {
-  timestamp_s: number
-  description: string
-  label: FrameNoteLabel
-}
-
-export interface TranscriptLine {
-  start_s: number
-  end_s: number
-  text: string
-}
-
-export interface VideoMeta {
-  duration_s: number
-  fps: number
-  width: number
-  height: number
-}
-
-export interface JobStatus {
-  id: string
-  filename: string
-  status: JobStatusValue
-  error: string | null
-  meta: VideoMeta | null
-  segments: Segment[]
-  has_render: boolean
-  created_at: string | null
-  progress: string | null
-  frame_notes: FrameNoteItem[]
-  transcript: TranscriptLine[]
-}
-
-export interface JobSummary {
-  id: string
-  filename: string
-  status: JobStatusValue
-  duration_s: number | null
-  segments: number
-  has_render: boolean
-  created_at: string | null
-}
+export type Asset = components['schemas']['Asset']
+export type JobStatusValue = Asset['status']
+export type Segment = components['schemas']['Segment']
+export type FrameNoteItem = components['schemas']['FrameNote']
+export type TranscriptLine = components['schemas']['TranscriptLine']
+export type VideoMeta = components['schemas']['VideoMeta']
+export type Project = components['schemas']['Project']
+export type ProjectSummary = components['schemas']['ProjectSummary']
+export type ProjectDetail = components['schemas']['ProjectDetail']
+export type TimelineDoc = components['schemas']['Timeline']
+export type TimelineInfo = components['schemas']['TimelineInfo']
 
 export interface FrameManifestItem {
   t: number
