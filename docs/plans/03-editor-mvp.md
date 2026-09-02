@@ -1,6 +1,6 @@
 # Plan 3 — Editor MVP (Lightweight Timeline Editor)
 
-**Status: planned.** Depends on Plan 1 (timeline document model). Scope calibrated to "what free OSS editors do, done well" — then Plan 4 grows it.
+**Status: in-progress (started Sept 2026).** Depends on Plan 1 (timeline document model). Scope calibrated to "what free OSS editors do, done well" — then Plan 4 grows it.
 
 ## Goal
 
