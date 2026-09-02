@@ -21,6 +21,13 @@ app.add_middleware(
 storage.init_db()
 app.include_router(videos.router)
 
+
+@app.get("/api/health")
+def health() -> dict[str, str]:
+    """Liveness probe (used by the Docker HEALTHCHECK and uptime monitors)."""
+    return {"status": "ok"}
+
+
 # Serve the built frontend when it exists (dev uses Vite on :5173).
 _dist = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
 if _dist.exists():
