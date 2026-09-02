@@ -2,8 +2,8 @@ import logging
 from pathlib import Path
 
 from .. import storage
-from ..config import CHUNK_SIZE, SAMPLE_INTERVAL_S, UPLOADS_DIR
-from ..models import Segment
+from ..config import CHUNK_SIZE, SAMPLE_INTERVAL_S, TRANSCRIBE_CHUNK_S, TRANSCRIBE_ENABLED, UPLOADS_DIR
+from ..models import Segment, TranscriptLine
 from . import ffmpeg
 from .providers.dry import get_provider
 
@@ -20,6 +20,32 @@ def source_path(job_id: str) -> Path:
 
 def render_path(job_id: str) -> Path:
     return job_dir(job_id) / "final_cut.mp4"
+
+
+def transcribe_audio(job_id: str, provider, duration_s: float) -> list[TranscriptLine]:
+    """Extract audio and transcribe it in time-chunks, offsetting each chunk's
+    timestamps back to the original timeline."""
+    lines: list[TranscriptLine] = []
+    audio_dir = job_dir(job_id) / "audio"
+    chunk_starts = []
+    start = 0.0
+    while start < duration_s:
+        chunk_starts.append(start)
+        start += TRANSCRIBE_CHUNK_S
+    for i, chunk_start in enumerate(chunk_starts):
+        storage.set_progress(job_id, f"transcribing audio {i + 1}/{len(chunk_starts)}")
+        clip_len = min(TRANSCRIBE_CHUNK_S, duration_s - chunk_start)
+        wav = ffmpeg.extract_audio(
+            source_path(job_id), audio_dir / f"chunk_{i:03d}.wav",
+            start_s=chunk_start, duration_s=clip_len,
+        )
+        for line in provider.transcribe(wav, clip_len):
+            lines.append(TranscriptLine(
+                start_s=chunk_start + line.start_s,
+                end_s=chunk_start + line.end_s,
+                text=line.text,
+            ))
+    return lines
 
 
 def run_pipeline(job_id: str) -> None:
@@ -43,6 +69,15 @@ def run_pipeline(job_id: str) -> None:
         storage.set_progress(job_id, f"extracted {len(frames)} frames")
 
         storage.set_status(job_id, "analyzing")
+
+        transcript: list[TranscriptLine] = []
+        if TRANSCRIBE_ENABLED:
+            try:
+                transcript = transcribe_audio(job_id, provider, meta.duration_s)
+                storage.set_transcript(job_id, transcript)
+            except Exception:  # noqa: BLE001 — audio is a bonus, not a gate
+                logger.exception("transcription failed for job %s; continuing without audio", job_id)
+
         notes = []
         chunks = range(0, len(frames), CHUNK_SIZE)
         for i, start in enumerate(chunks):
@@ -52,7 +87,7 @@ def run_pipeline(job_id: str) -> None:
         storage.set_notes(job_id, notes)
 
         storage.set_progress(job_id, "selecting segments")
-        segments = provider.select_segments(notes, meta.duration_s)
+        segments = provider.select_segments(notes, meta.duration_s, transcript)
         if not segments:
             raise RuntimeError("model returned no keep-segments")
         storage.set_segments(job_id, segments)

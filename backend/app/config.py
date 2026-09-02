@@ -18,6 +18,11 @@ SAMPLE_INTERVAL_S = float(os.environ.get("SAMPLE_INTERVAL_S", "2.0"))
 FRAME_WIDTH = int(os.environ.get("FRAME_WIDTH", "512"))
 CHUNK_SIZE = int(os.environ.get("CHUNK_SIZE", "40"))
 
+# Audio transcription (any OpenAI-compatible /audio/transcriptions endpoint).
+TRANSCRIBE_ENABLED = os.environ.get("TRANSCRIBE_ENABLED", "1") == "1"
+TRANSCRIBE_MODEL = os.environ.get("TRANSCRIBE_MODEL", "whisper-1")
+TRANSCRIBE_CHUNK_S = float(os.environ.get("TRANSCRIBE_CHUNK_S", "600"))
+
 DATA_DIR = Path(os.environ.get("CUTLASS_DATA", BASE_DIR / "data"))
 UPLOADS_DIR = DATA_DIR / "uploads"
 DB_PATH = DATA_DIR / "cutlass.db"

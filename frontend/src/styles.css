@@ -138,3 +138,29 @@ button.icon {
 .note.intro_outro { background: #4f9cf9; }
 .note.repetition { background: #8b5cf6; }
 .note.other { background: #8b93a3; }
+
+.transcript {
+  margin-top: 16px;
+  border: 1px solid #2a303c;
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+.transcript ul {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 0;
+  max-height: 220px;
+  overflow-y: auto;
+}
+.transcript li {
+  padding: 4px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+}
+.transcript li:hover { background: #232936; }
+.transcript .ts {
+  color: #4f9cf9;
+  font-variant-numeric: tabular-nums;
+  margin-right: 6px;
+}

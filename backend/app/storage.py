@@ -2,7 +2,7 @@ import json
 import sqlite3
 
 from .config import DB_PATH
-from .models import FrameNote, JobStatus, Segment, VideoMeta
+from .models import FrameNote, JobStatus, Segment, TranscriptLine, VideoMeta
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS jobs (
@@ -14,7 +14,8 @@ CREATE TABLE IF NOT EXISTS jobs (
     segments TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     progress TEXT,
-    notes TEXT
+    notes TEXT,
+    transcript TEXT
 );
 """
 
@@ -29,7 +30,7 @@ def init_db() -> None:
     with _connect() as conn:
         conn.execute(_SCHEMA)
         # Migrate DBs created before these columns existed.
-        for col in ("progress", "notes"):
+        for col in ("progress", "notes", "transcript"):
             try:
                 conn.execute(f"ALTER TABLE jobs ADD COLUMN {col} TEXT")
             except sqlite3.OperationalError:
@@ -48,6 +49,11 @@ def _row_to_job(row: sqlite3.Row) -> JobStatus:
         if row["notes"]
         else []
     )
+    transcript = (
+        [TranscriptLine.model_validate(t) for t in json.loads(row["transcript"])]
+        if row["transcript"]
+        else []
+    )
     return JobStatus(
         id=row["id"],
         filename=row["filename"],
@@ -59,6 +65,7 @@ def _row_to_job(row: sqlite3.Row) -> JobStatus:
         created_at=row["created_at"],
         progress=row["progress"],
         frame_notes=notes,
+        transcript=transcript,
     )
 
 
@@ -106,6 +113,12 @@ def set_notes(job_id: str, notes: list[FrameNote | dict]) -> None:
     payload = json.dumps([n.model_dump() for n in models])
     with _connect() as conn:
         conn.execute("UPDATE jobs SET notes = ? WHERE id = ?", (payload, job_id))
+
+
+def set_transcript(job_id: str, transcript: list[TranscriptLine]) -> None:
+    payload = json.dumps([t.model_dump() for t in transcript])
+    with _connect() as conn:
+        conn.execute("UPDATE jobs SET transcript = ? WHERE id = ?", (payload, job_id))
 
 
 def get_job(job_id: str) -> JobStatus | None:

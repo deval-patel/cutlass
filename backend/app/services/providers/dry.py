@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from ...models import FrameNote, Segment
+from ...models import FrameNote, Segment, TranscriptLine
 from .base import MultimodalProvider
 
 
@@ -10,13 +10,29 @@ class DryRunProvider(MultimodalProvider):
     def analyze_frames(
         self, frames: list[tuple[float, Path]], total_duration_s: float
     ) -> list[FrameNote]:
-        interval = frames[1][0] - frames[0][0] if len(frames) > 1 else 1.0
         return [
             FrameNote(timestamp_s=ts, description=f"(dry run) frame at {ts:.0f}s", label="core")
             for ts, _ in frames
         ]
 
-    def select_segments(self, notes: list[FrameNote], total_duration_s: float) -> list[Segment]:
+    def transcribe(self, audio: Path, duration_s: float) -> list[TranscriptLine]:
+        # One synthetic line per 30s so downstream code sees a realistic shape.
+        lines = []
+        t = 0.0
+        while t < duration_s:
+            end = min(t + 30.0, duration_s)
+            lines.append(TranscriptLine(
+                start_s=t, end_s=end, text=f"(dry run) speech from {t:.0f}s to {end:.0f}s",
+            ))
+            t = end
+        return lines
+
+    def select_segments(
+        self,
+        notes: list[FrameNote],
+        total_duration_s: float,
+        transcript: list[TranscriptLine] = [],
+    ) -> list[Segment]:
         # Heuristic draft: drop the first 10% (intro) and last 10% (outro),
         # cut everything else into keep-segments with 1s gaps removed is
         # unnecessary — just keep one big middle segment.

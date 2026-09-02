@@ -56,6 +56,26 @@ def extract_frames(
     return [((i) * interval_s, p) for i, p in enumerate(frames)]
 
 
+def extract_audio(video: Path, out_path: Path, start_s: float | None = None,
+                  duration_s: float | None = None) -> Path:
+    """Extract 16kHz mono WAV (optionally a time slice) for transcription."""
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    args = ["ffmpeg", "-y"]
+    if start_s is not None:
+        args += ["-ss", f"{start_s:.3f}"]
+    if duration_s is not None:
+        args += ["-t", f"{duration_s:.3f}"]
+    args += [
+        "-i", str(video),
+        "-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le",
+        str(out_path),
+    ]
+    proc = _run(args)
+    if proc.returncode != 0:
+        raise RuntimeError(f"audio extraction failed: {proc.stderr[-500:]}")
+    return out_path
+
+
 def render_cut(video: Path, segments: list[tuple[float, float]], out_path: Path) -> None:
     """Concatenate keep-segments into a single re-encoded mp4."""
     if not segments:

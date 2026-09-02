@@ -6,7 +6,7 @@ from pathlib import Path
 import httpx
 
 from ... import config
-from ...models import FrameNote, Segment
+from ...models import FrameNote, Segment, TranscriptLine
 from .base import MultimodalProvider
 
 VALID_LABELS = {"core", "filler", "dead_air", "intro_outro", "repetition", "other"}
@@ -27,17 +27,18 @@ For EVERY frame, output a JSON array (and nothing else) where each element is:
 
 GLOBAL_PROMPT = """\
 You are editing a video of total duration {duration:.0f}s. Below are per-frame \
-notes from the whole video (timestamp, description, label). Produce the FIRST \
-DRAFT CUT: select contiguous keep-segments containing the meaningful content \
-while cutting dead air, filler, intros/outros, and repetition.
+notes from the whole video (timestamp, description, label){transcript_intro} \
+Produce the FIRST DRAFT CUT: select contiguous keep-segments containing the \
+meaningful content while cutting dead air, filler, intros/outros, and \
+repetition.
 
 Output ONLY a JSON array of keep-segments:
 [{{"start_s": <float>, "end_s": <float>, "reason": "<why kept>", "confidence": <0-1>}}]
 
 Rules: segments must be chronological and non-overlapping, cover at most the \
-video duration, and keep the video coherent (no cuts mid-sentence at boundaries \
-when avoidable — pad boundaries slightly).
-
+video duration, keep the video coherent — never cut mid-sentence when the \
+transcript makes sentence boundaries clear, and pad boundaries slightly.
+{transcript_block}
 Notes:
 {notes}\
 """
@@ -83,11 +84,63 @@ class GLMProvider(MultimodalProvider):
             label=label if label in VALID_LABELS else "other",
         )
 
-    def select_segments(self, notes: list[FrameNote], total_duration_s: float) -> list[Segment]:
+    def transcribe(self, audio: Path, duration_s: float) -> list[TranscriptLine]:
+        with audio.open("rb") as f:
+            resp = httpx.post(
+                f"{config.MODEL_BASE_URL}/audio/transcriptions",
+                headers=self._headers,
+                files={"file": (audio.name, f, "audio/wav")},
+                data={
+                    "model": config.TRANSCRIBE_MODEL,
+                    "response_format": "verbose_json",
+                },
+                timeout=600,
+            )
+        resp.raise_for_status()
+        data = resp.json()
+        segments = data.get("segments") or []
+        if segments:
+            return [
+                TranscriptLine(
+                    start_s=float(s.get("start", 0)),
+                    end_s=float(s.get("end", 0)),
+                    text=str(s.get("text", "")).strip(),
+                )
+                for s in segments
+                if str(s.get("text", "")).strip()
+            ]
+        # Endpoints that only return plain text: one line covering the chunk.
+        text = str(data.get("text", "")).strip()
+        return [TranscriptLine(start_s=0, end_s=duration_s, text=text)] if text else []
+
+    def select_segments(
+        self,
+        notes: list[FrameNote],
+        total_duration_s: float,
+        transcript: list[TranscriptLine] = [],
+    ) -> list[Segment]:
         notes_text = "\n".join(
             f"- {n.timestamp_s:.1f}s [{n.label}]: {n.description}" for n in notes
         )
-        prompt = GLOBAL_PROMPT.format(duration=total_duration_s, notes=notes_text)
+        if transcript:
+            transcript_intro = ", plus the video's audio transcript with timestamps"
+            transcript_block = (
+                "\nTranscript:\n"
+                + "\n".join(
+                    f"[{line.start_s:.1f}-{line.end_s:.1f}s] {line.text}"
+                    for line in transcript
+                )
+                + "\n"
+            )
+        else:
+            transcript_intro = ""
+            transcript_block = ""
+        prompt = GLOBAL_PROMPT.format(
+            duration=total_duration_s,
+            transcript_intro=transcript_intro,
+            transcript_block=transcript_block,
+            notes=notes_text,
+        )
         raw = self._chat(config.TEXT_MODEL, [{"role": "user", "content": prompt}])
         items = _extract_json(raw)
         segments = []

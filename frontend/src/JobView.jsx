@@ -227,6 +227,22 @@ export default function JobView({ jobId, onReset }) {
                   </a>
                 </p>
               )}
+
+              {(job.transcript || []).length > 0 && (
+                <div className="transcript">
+                  <div className="muted">Transcript — click a line to jump there</div>
+                  <ul>
+                    {job.transcript.map((line, i) => (
+                      <li
+                        key={i}
+                        onClick={() => videoRef.current && (videoRef.current.currentTime = line.start_s)}
+                      >
+                        <span className="ts">{fmt(line.start_s)}</span> {line.text}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </>
           )}
         </>

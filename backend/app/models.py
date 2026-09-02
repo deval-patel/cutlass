@@ -16,6 +16,12 @@ class FrameNote(BaseModel):
     label: Literal["core", "filler", "dead_air", "intro_outro", "repetition", "other"] = "other"
 
 
+class TranscriptLine(BaseModel):
+    start_s: float
+    end_s: float
+    text: str
+
+
 class VideoMeta(BaseModel):
     duration_s: float = 0.0
     fps: float = 0.0
@@ -34,3 +40,4 @@ class JobStatus(BaseModel):
     created_at: Optional[str] = None
     progress: Optional[str] = None
     frame_notes: list[FrameNote] = []
+    transcript: list[TranscriptLine] = []
