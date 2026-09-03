@@ -1,6 +1,6 @@
 # Plan 4 — Editor Growth + Style v2
 
-**Status: planned.** Depends on Plans 1–3. Feature-sized chunks, each independently shippable.
+**Status: in-progress — phase 1 (multi-asset timelines) started Sept 2026.** Depends on Plans 1–3. Feature-sized chunks, each independently shippable.
 
 ## Goal
 
