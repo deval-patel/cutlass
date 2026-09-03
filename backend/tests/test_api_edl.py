@@ -81,6 +81,19 @@ def test_unknown_job_404(client):
     assert client.put("/api/jobs/nope/segments", json=[]).status_code == 404
 
 
+def probe_duration(path) -> float:
+    import json
+    import subprocess
+
+    proc = subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "json", str(path)],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return float(json.loads(proc.stdout)["format"]["duration"])
+
+
 def test_rendered_duration_matches_timeline_duration(client, test_video):
     """Acceptance (plan 3): preview timeline and rendered MP4 agree on duration.
 

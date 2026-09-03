@@ -100,37 +100,64 @@ def extract_audio(
     return out_path
 
 
-def render_cut(video: Path, segments: list[tuple[float, float]], out_path: Path) -> None:
-    """Concatenate keep-segments into a single re-encoded mp4."""
-    if not segments:
-        raise RuntimeError("no segments to render")
-    filter_parts = [f"(between(t,{start:.3f},{end:.3f}))" for start, end in segments]
-    expr = "+".join(filter_parts)
-    vf = "select='" + expr + "',setpts=N/FRAME_RATE/TB"
-    # Match select on the audio timeline too, then resync PTS.
-    af = "aselect='" + expr + "',asetpts=N/SR/TB"
-    proc = _run(
-        [
-            "ffmpeg",
-            "-y",
-            "-i",
-            str(video),
-            "-vf",
-            vf,
-            "-af",
-            af,
-            "-c:v",
-            "libx264",
-            "-preset",
-            "veryfast",
-            "-crf",
-            "20",
-            "-c:a",
-            "aac",
-            "-movflags",
-            "+faststart",
-            str(out_path),
-        ]
+def render_timeline(clip_specs: list[tuple[Path, float, float]], out_path: Path) -> None:
+    """Render a timeline: trim each (video, source_in, source_out) clip and
+    concatenate in record order. One input per unique video, so multi-asset
+    timelines render exactly like single-asset ones (same duration parity).
+    """
+    if not clip_specs:
+        raise RuntimeError("no clips to render")
+
+    inputs: list[Path] = []
+    input_index: dict[str, int] = {}
+    for video, _, _ in clip_specs:
+        key = str(video)
+        if key not in input_index:
+            input_index[key] = len(inputs)
+            inputs.append(video)
+
+    filters: list[str] = []
+    concat_refs: list[str] = []
+    for j, (video, source_in, source_out) in enumerate(clip_specs):
+        if source_out - source_in <= 0:
+            raise RuntimeError(f"clip {j} has an empty source range")
+        input_idx = input_index[str(video)]
+        filters.append(
+            f"[{input_idx}:v]trim=start={source_in:.3f}:end={source_out:.3f},"
+            f"setpts=PTS-STARTPTS[v{j}]"
+        )
+        filters.append(
+            f"[{input_idx}:a]atrim=start={source_in:.3f}:end={source_out:.3f},"
+            f"asetpts=PTS-STARTPTS[a{j}]"
+        )
+        concat_refs.append(f"[v{j}][a{j}]")
+
+    graph = (
+        ";".join(filters) + f";{''.join(concat_refs)}concat=n={len(clip_specs)}:v=1:a=1[v][aout]"
     )
+
+    args = ["ffmpeg", "-y"]
+    for video in inputs:
+        args += ["-i", str(video)]
+    args += [
+        "-filter_complex",
+        graph,
+        "-map",
+        "[v]",
+        "-map",
+        "[aout]",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "veryfast",
+        "-crf",
+        "20",
+        "-c:a",
+        "aac",
+        "-movflags",
+        "+faststart",
+        str(out_path),
+    ]
+    proc = _run(args)
     if proc.returncode != 0:
         raise RuntimeError(f"render failed: {proc.stderr[-500:]}")

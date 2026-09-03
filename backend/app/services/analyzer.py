@@ -55,19 +55,44 @@ def _write_frames_manifest(asset_id: str, frames: list[tuple[float, Path]]) -> N
 
 
 def sync_timeline_from_draft(asset_id: str) -> None:
-    """(Re)build the project timeline from the asset's draft EDL.
+    """Merge the asset's draft EDL into the project timeline (multi-asset aware).
 
     Called when the pipeline produces a draft, when a re-draft lands, and
-    when the legacy segment editor saves edits — the flat-EDL view and the
-    timeline never drift. Stamps DraftMeta (style + prompt version + stats)
-    so every draft's provenance is answerable.
+    when the legacy segment editor saves edits. Semantics: an asset whose
+    clips already sit on the timeline has them REPLACED and moved to the
+    end (predictable, never overlapping); a new asset's clips append at
+    the end. Stamps DraftMeta so every draft's provenance is answerable.
     """
     asset = assets_repo.get_asset(asset_id)
     if asset is None:
         raise RuntimeError(f"unknown asset {asset_id}")
     fps = asset.meta.fps if asset.meta else None
     duration = asset.meta.duration_s if asset.meta else 0.0
-    document = timeline_schema.from_segments(asset.segments, asset_id=asset_id, frame_rate=fps)
+
+    fresh = timeline_schema.from_segments(asset.segments, asset_id=asset_id, frame_rate=fps)
+    fresh_clips = fresh.tracks[0].clips
+
+    stored = timelines_repo.get_timeline(asset.project_id)
+    if stored is None:
+        document = fresh
+    else:
+        _, _, document = stored
+        track_idx = next((i for i, t in enumerate(document.tracks) if t.kind == "video"), None)
+        if track_idx is None:
+            document.tracks.append(fresh.tracks[0].model_copy())
+        else:
+            track = document.tracks[track_idx]
+            others = [c for c in track.clips if c.source.asset_id != asset_id]
+            offset = max(
+                (c.record_start_s + (c.source.out_s - c.source.in_s) for c in others),
+                default=0.0,
+            )
+            moved = [
+                c.model_copy(update={"record_start_s": round(offset + c.record_start_s, 3)})
+                for c in fresh_clips
+            ]
+            document.tracks[track_idx] = track.model_copy(update={"clips": others + moved})
+
     document.meta = timeline_schema.DraftMeta(
         prompt_version=CURRENT_VERSION,
         style_preset=asset.style_preset,
@@ -268,31 +293,13 @@ def run_redraft(asset_id: str) -> None:
         assets_repo.set_status(asset_id, "failed", error=str(exc))
 
 
-def _render_ranges(document: timeline_schema.Timeline) -> tuple[str, list[tuple[float, float]]]:
-    """Map the timeline to (asset_id, source ranges in record order).
-
-    The renderer currently handles single-asset timelines only; multi-asset
-    timelines arrive with the Plan 3 editor.
-    """
-    segments = timeline_schema.to_segments(document)
-    if not segments:
-        raise RuntimeError("timeline has no enabled clips to render")
-    asset_ids = {
-        clip.source.asset_id
-        for track in document.tracks
-        if track.kind == "video"
-        for clip in track.clips
-        if clip.enabled
-    }
-    if len(asset_ids) != 1:
-        raise RuntimeError(
-            f"rendering supports single-asset timelines for now (got {len(asset_ids)} assets)"
-        )
-    return next(iter(asset_ids)), [(seg.start_s, seg.end_s) for seg in segments]
-
-
 def run_render(asset_id: str) -> None:
-    """Render the asset's project timeline into final_cut.mp4."""
+    """Render the asset's project timeline into final_cut.mp4.
+
+    Multi-asset timelines render via per-clip trims concatenated in record
+    order (one ffmpeg input per unique asset). The artifact lands beside
+    the asset that triggered the render.
+    """
     try:
         asset = assets_repo.get_asset(asset_id)
         if asset is None:
@@ -301,9 +308,19 @@ def run_render(asset_id: str) -> None:
         assets_repo.set_status(asset_id, "rendering")
 
         _, _, document = get_or_seed_timeline(asset.project_id)
-        render_asset_id, ranges = _render_ranges(document)
-        # The render artifact lives beside the primary (only) asset.
-        ffmpeg.render_cut(source_path(render_asset_id), ranges, render_path(render_asset_id))
+        track = next((t for t in document.tracks if t.kind == "video"), None)
+        clips = (
+            [c for c in sorted(track.clips, key=lambda c: c.record_start_s) if c.enabled]
+            if track
+            else []
+        )
+        if not clips:
+            raise RuntimeError("timeline has no enabled clips to render")
+        specs = [
+            (source_path(clip.source.asset_id), clip.source.in_s, clip.source.out_s)
+            for clip in clips
+        ]
+        ffmpeg.render_timeline(specs, render_path(asset_id))
         assets_repo.set_status(asset_id, "rendered")
     except Exception as exc:
         logger.exception("render failed for asset %s", asset_id)
