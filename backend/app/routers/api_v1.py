@@ -126,6 +126,29 @@ async def upload_asset(
     return _get_asset(asset_id)
 
 
+@router.post("/projects/{project_id}/redraft")
+def redraft_project(project_id: str, body: RedraftRequest) -> dict[str, str | int]:
+    """Re-draft every analyzed asset in the project with the given style.
+
+    Each asset re-selects from its own cached analysis (no vision calls);
+    drafts auto-assemble onto the project timeline.
+    """
+    _get_project(project_id)
+    try:
+        presets.load_preset(body.preset_id)
+    except KeyError as exc:
+        raise HTTPException(400, f"unknown style preset '{body.preset_id}'") from exc
+
+    eligible = [a for a in assets_repo.list_assets(project_id) if a.frame_notes]
+    if not eligible:
+        raise HTTPException(409, "no analyzed assets to redraft — wait for the first pass")
+    for asset in eligible:
+        assets_repo.set_style(asset.id, body.preset_id, body.user_brief.strip())
+        assets_repo.set_status(asset.id, "redrafting")
+    get_queue().enqueue("redraft-project", project_id)
+    return {"status": "redrafting", "assets": len(eligible)}
+
+
 @router.post("/assets/{asset_id}/redraft")
 def redraft_asset(asset_id: str, body: RedraftRequest) -> dict[str, str]:
     """Re-run selection with a new style over cached analysis (no vision calls)."""

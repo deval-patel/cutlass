@@ -19,7 +19,7 @@ from ..repositories import assets as assets_repo
 
 logger = logging.getLogger(__name__)
 
-TaskKind = Literal["analyze", "redraft", "render"]
+TaskKind = Literal["analyze", "redraft", "redraft-project", "render"]
 Task = tuple[TaskKind, str] | None  # None is the shutdown sentinel
 
 # A job in one of these states has work outstanding; map it to the task
@@ -39,6 +39,7 @@ def _default_handlers() -> Mapping[str, Callable[[str], None]]:
     return {
         "analyze": analyzer.run_pipeline,
         "redraft": analyzer.run_redraft,
+        "redraft-project": analyzer.run_project_redraft,
         "render": analyzer.run_render,
     }
 

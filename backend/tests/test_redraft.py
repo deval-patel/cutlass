@@ -163,3 +163,62 @@ def test_upload_accepts_style_fields(client, test_video):
             data={"style_preset": "nope"},
         )
     assert bad.status_code == 400
+
+
+def test_project_redraft_restyles_all_assets_and_assembles(client, test_video, counting_provider):
+    proj = client.post("/api/v1/projects", json={"name": "whole trip"}).json()
+    ids = []
+    for i in range(2):
+        with test_video.open("rb") as f:
+            res = client.post(
+                f"/api/v1/projects/{proj['id']}/assets",
+                files={"video": (f"day{i + 1}.mp4", f)},
+            )
+        ids.append(res.json()["id"])
+    for asset_id in ids:
+        wait_for_status(client, asset_id, {"ready", "failed"})
+    vision_after_analysis = counting_provider.vision_calls
+
+    res = client.post(
+        f"/api/v1/projects/{proj['id']}/redraft",
+        json={"preset_id": "cinematic", "user_brief": "let it breathe"},
+    )
+    assert res.status_code == 200, res.text
+    assert res.json()["assets"] == 2
+
+    for asset_id in ids:
+        job = wait_for_status(client, asset_id, {"ready", "failed"})
+        assert job["status"] == "ready", job.get("error")
+        assert job["style_preset"] == "cinematic"
+        assert job["user_brief"] == "let it breathe"
+
+    # Selection re-ran per asset; vision untouched.
+    assert counting_provider.select_calls >= 2
+    assert counting_provider.vision_calls == vision_after_analysis
+
+    # Drafts auto-assembled onto one timeline: clips from both assets.
+    detail = client.get(f"/api/v1/projects/{proj['id']}").json()
+    timeline = detail["timeline"]
+    assert timeline is not None and timeline["version"] >= 3
+    clip_assets = {
+        c["source"]["asset_id"] for t in timeline["document"]["tracks"] for c in t["clips"]
+    }
+    assert clip_assets == set(ids)
+    meta = timeline["document"]["meta"]
+    assert meta["style_preset"] == "cinematic"
+
+
+def test_project_redraft_rejections(client, test_video):
+    proj = client.post("/api/v1/projects", json={"name": "empty"}).json()
+    assert (
+        client.post(
+            f"/api/v1/projects/{proj['id']}/redraft", json={"preset_id": "vlog"}
+        ).status_code
+        == 409
+    )
+    assert (
+        client.post(
+            f"/api/v1/projects/{proj['id']}/redraft", json={"preset_id": "bogus"}
+        ).status_code
+        == 400
+    )

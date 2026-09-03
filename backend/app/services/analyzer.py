@@ -258,6 +258,30 @@ def run_pipeline(asset_id: str) -> None:
         assets_repo.set_status(asset_id, "failed", error=str(exc))
 
 
+def _redraft_one(asset_id: str) -> None:
+    """Re-select one asset's draft from cached analysis. Raises on failure."""
+    asset = assets_repo.get_asset(asset_id)
+    if asset is None:
+        raise RuntimeError(f"unknown asset {asset_id}")
+    if not asset.frame_notes:
+        raise RuntimeError("no cached frame analysis to redraft from")
+    if asset.meta is None:
+        raise RuntimeError("asset metadata missing; cannot redraft")
+    assets_repo.set_progress(asset_id, "re-selecting segments")
+
+    style = resolve_style(asset.style_preset, asset.user_brief)
+    provider = get_provider()
+    segments = _select_draft(
+        provider, asset.frame_notes, asset.transcript or None, asset.meta.duration_s, style
+    )
+    if not segments:
+        raise RuntimeError("model returned no keep-segments")
+    assets_repo.set_segments(asset_id, segments)
+    sync_timeline_from_draft(asset_id)
+    assets_repo.set_progress(asset_id, None)
+    assets_repo.set_status(asset_id, "ready")
+
+
 def run_redraft(asset_id: str) -> None:
     """Re-run *only* segment selection over cached analysis with a new style.
 
@@ -267,30 +291,31 @@ def run_redraft(asset_id: str) -> None:
     A/B styles.
     """
     try:
-        asset = assets_repo.get_asset(asset_id)
-        if asset is None:
+        if assets_repo.get_asset(asset_id) is None:
             logger.warning("asset %s vanished before redraft; skipping", asset_id)
             return
-        if not asset.frame_notes:
-            raise RuntimeError("no cached frame analysis to redraft from")
-        if asset.meta is None:
-            raise RuntimeError("asset metadata missing; cannot redraft")
-        assets_repo.set_progress(asset_id, "re-selecting segments")
-
-        style = resolve_style(asset.style_preset, asset.user_brief)
-        provider = get_provider()
-        segments = _select_draft(
-            provider, asset.frame_notes, asset.transcript or None, asset.meta.duration_s, style
-        )
-        if not segments:
-            raise RuntimeError("model returned no keep-segments")
-        assets_repo.set_segments(asset_id, segments)
-        sync_timeline_from_draft(asset_id)
-        assets_repo.set_progress(asset_id, None)
-        assets_repo.set_status(asset_id, "ready")
+        _redraft_one(asset_id)
     except Exception as exc:
         logger.exception("redraft failed for asset %s", asset_id)
         assets_repo.set_status(asset_id, "failed", error=str(exc))
+
+
+def run_project_redraft(project_id: str) -> None:
+    """Re-draft every analyzed asset in the project with its stored style.
+
+    Each asset's selection is independent (its own cached notes), and each
+    draft auto-assembles onto the project timeline via sync — one call
+    restyles the whole trip. A failing asset is marked failed; siblings
+    continue.
+    """
+    assets = [a for a in assets_repo.list_assets(project_id) if a.frame_notes]
+    logger.info("project redraft for %s: %d assets", project_id, len(assets))
+    for asset in assets:
+        try:
+            _redraft_one(asset.id)
+        except Exception as exc:
+            logger.exception("project redraft failed for asset %s", asset.id)
+            assets_repo.set_status(asset.id, "failed", error=str(exc))
 
 
 def run_render(asset_id: str) -> None:
