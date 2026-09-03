@@ -1,6 +1,20 @@
 # Plan 4 — Editor Growth + Style v2
 
-**Status: in-progress — phase 1 (multi-asset timelines) started Sept 2026.** Depends on Plans 1–3. Feature-sized chunks, each independently shippable.
+**Status: in-progress — phase 1 ✅ (multi-asset timelines, Sept 2026); remaining features queued.** Depends on Plans 1–3. Feature-sized chunks, each independently shippable.
+
+## Phase 1 audit: multi-asset timelines (Sept 2026)
+
+The real travel use case — one project, many clips — is end-to-end:
+
+- **Assembly**: each analyzed asset's draft auto-joins the project timeline (new assets append; re-drafted assets replace their own clips and move to the end — predictable, never overlapping).
+- **Rendering**: one ffmpeg invocation with per-clip trims concatenated in record order across all inputs; duration parity holds for multi-asset timelines (service test: 5s from 3s+3s inputs; API test: two-asset project halve-and-close edit).
+- **Exports**: FCPXML emits one resource per asset; CMX3600 events carry per-asset reel names (first 8 chars of the asset id, the field's width); SRT merges transcripts per asset.
+- **Project redraft**: `POST /api/v1/projects/{id}/redraft` restyles every analyzed asset from cached analysis in one queued task (no vision calls); drafts re-assemble automatically; per-asset failures are isolated; crash recovery rides the existing redrafting→redraft map.
+- **Editor**: asset browser (status, duration, style per asset) with one-click add-to-timeline (undoable), per-asset hue coding, cross-asset program monitor (src swap with pending seek), and the editor timeline reloads when a project redraft lands.
+
+**Verified by**: 4 new backend test suites/cases + store tests; Docker E2E (two assets → project redraft → render parity → exports).
+
+**Explicitly deferred to later Plan-4 phases** (in rough order): transitions (xfade), text/titles, music + ducking (audio tracks), caption burn-in, speed ramps (needs reworking the record-span ≡ source-span invariant — deliberately not rushed), basic color, B-roll insertion, proxies, J/L cuts + per-section pacing (style v2 timeline-aware knobs). The cross-asset JOINT selection (model choosing across all assets at once) is also deferred: phase 1 redrafts each asset independently and assembles.
 
 ## Goal
 
