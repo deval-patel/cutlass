@@ -16,6 +16,8 @@ Roadmap and architecture plans live in [`docs/ROADMAP.md`](docs/ROADMAP.md).
 - **Projects** — every upload is a project (assets → timeline with version history); deleting a project removes its rows and files
 - **Durable jobs** — a worker queue with crash recovery (killed mid-analysis? work resumes on restart) and SSE progress updates
 - **API** — `/api/v1` (projects, assets, timeline documents); the legacy `/api` endpoints keep working as a compatibility shim
+- **Editor** — timeline page with drag-trim/slide/split/ripple-delete, snapping, undo/redo, keyboard map (space, JKL-style stepping, S, Del), waveform lane, and per-clip preview that plays the timeline
+- **Exports** — FCPXML 1.9, CMX3600 EDL, and SRT (re-timed captions) from any timeline; rendered MP4 always matches the timeline duration
 
 ## Pipeline
 

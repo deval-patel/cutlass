@@ -1,6 +1,21 @@
 # Plan 3 — Editor MVP (Lightweight Timeline Editor)
 
-**Status: in-progress (started Sept 2026).** Depends on Plan 1 (timeline document model). Scope calibrated to "what free OSS editors do, done well" — then Plan 4 grows it.
+**Status: ✅ implemented (Sept 2026).** Depends on Plan 1 (timeline document model). Scope calibrated to "what free OSS editors do, done well" — then Plan 4 grows it.
+
+## Implementation audit (Sept 2026)
+
+**Acceptance criteria — how each was verified:**
+- Refinement without numeric fields; undo/redo covers every operation: the editor page exposes drag-trim/slide/split/ripple-delete plus full keyboard map (space, arrows ±1 frame, shift ±1s, S, Del/Shift+Del, Ctrl+Z/Y, Home/End, Esc); every mutation goes through the store's command stack (headless tests).
+- Interactivity on long timelines: DOM clips + canvas ruler/waveform with zoom-adaptive ticks; waveforms decode once and cache (`peaks.json`); no per-frame React churn (rAF loop only pushes a number). Formal 60fps profiling deferred — flagged for Plan 4's proxy work.
+- Preview timeline-time vs rendered MP4 duration parity: `test_rendered_duration_matches_timeline_duration` (edit → render → ffprobe ≈ timeline duration) and verified in-container.
+- FCPXML validity: parses as real XML in tests with asserted clip offsets/start/durations; **Resolve import remains a manual check** (documented here) — the container cannot run Resolve.
+- No edit can produce an invalid timeline: operations preserve the record-span == source-span invariant and reject overlaps (headless property-ish tests); the server re-validates every PUT (Plan 1 validation).
+
+**Deviations / deferred:**
+- OTIO library not adopted — hand-rolled FCPXML 1.9 + CMX3600 writers for single-asset timelines (ADR-0002's "OTIO at the edges" moves to Plan 4 with multi-asset).
+- `move` slides within the legal gap only; cross-clip reorder (drag past a neighbor) is rejected — true reordering lands with multi-asset tracks (Plan 4).
+- Multi-select is stored but interactions operate on single selection; box-select arrives with Plan 4.
+- Audio is visualized (waveform) but not independently editable — A/V-linked edges are Plan 4's J/L-cut work.
 
 ## Goal
 

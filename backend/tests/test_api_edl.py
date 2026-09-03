@@ -1,3 +1,4 @@
+import pytest
 from conftest import upload_and_wait, wait_for_status
 
 
@@ -78,3 +79,53 @@ def test_edit_rejects_empty_result(client, test_video):
 def test_unknown_job_404(client):
     assert client.get("/api/jobs/nope").status_code == 404
     assert client.put("/api/jobs/nope/segments", json=[]).status_code == 404
+
+
+def test_rendered_duration_matches_timeline_duration(client, test_video):
+    """Acceptance (plan 3): preview timeline and rendered MP4 agree on duration.
+
+    An editor-style edit (two clips, gaps removed) renders to exactly the
+    timeline duration.
+    """
+    import json
+    import subprocess
+
+    from app.config import UPLOADS_DIR
+
+    job = upload_and_wait(client, test_video)
+    job_id = job["id"]
+
+    kept = 3.0 + 4.0  # two clips
+    res = client.put(
+        f"/api/jobs/{job_id}/segments",
+        json=[
+            {"start_s": 0.0, "end_s": 3.0, "reason": "first", "confidence": 1.0},
+            {"start_s": 6.0, "end_s": 10.0, "reason": "second", "confidence": 1.0},
+        ],
+    )
+    assert res.status_code == 200, res.text
+
+    assert client.post(f"/api/jobs/{job_id}/render").status_code == 200
+    job = wait_for_status(client, job_id, {"rendered", "failed"})
+    assert job["status"] == "rendered", job.get("error")
+
+    render = UPLOADS_DIR / job_id / "final_cut.mp4"
+    proc = subprocess.run(
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "json",
+            str(render),
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    duration = float(json.loads(proc.stdout)["format"]["duration"])
+    assert duration == pytest.approx(kept, abs=0.15)
