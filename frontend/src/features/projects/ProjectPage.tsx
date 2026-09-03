@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { RefObject } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import MediaPlayer from '../../components/MediaPlayer'
 import { fmtSeconds, isTerminal } from '../../lib/status'
@@ -337,6 +337,7 @@ function AssetPanel(props: {
                 {asset.status === 'ready' && (
                   <button onClick={() => startRender.mutate(asset.id)}>Render final cut</button>
                 )}{' '}
+                <Link to={`/p/${projectId}/edit`}>Open in editor</Link>{' '}
                 {asset.status === 'rendering' && <button disabled>Rendering…</button>}{' '}
                 <button className="secondary" onClick={startEdit}>
                   Edit segments

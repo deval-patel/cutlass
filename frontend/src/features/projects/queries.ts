@@ -89,6 +89,19 @@ export function useRedraft(projectId: string) {
   })
 }
 
+/** Waveform buckets for the editor's waveform lane. */
+export function usePeaks(assetId: string | undefined) {
+  return useQuery({
+    queryKey: ['peaks', assetId],
+    queryFn: () =>
+      jsonFetch<{ bucket_seconds: number; buckets: number[][]; duration_s: number }>(
+        `/api/v1/assets/${assetId}/peaks`,
+      ),
+    enabled: !!assetId,
+    staleTime: Infinity,
+  })
+}
+
 export function useDeleteProject() {
   const queryClient = useQueryClient()
   return useMutation({

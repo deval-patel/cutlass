@@ -22,6 +22,7 @@ interface EditorState {
 
   load(timeline: EditorTimeline): void
   commit(next: EditorTimeline | null): void
+  markSaved(): void
   undo(): void
   redo(): void
 
@@ -88,6 +89,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       dirty: true,
       selection: [],
     })
+  },
+
+  markSaved() {
+    set({ dirty: false })
   },
 
   select(ids) {
