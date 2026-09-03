@@ -151,3 +151,45 @@ def test_export_endpoints_roundtrip(client, test_video):
     ET.fromstring(xml)  # real draft timeline parses
 
     assert client.get(f"/api/v1/projects/{project_id}/export/wmv").status_code == 400
+
+
+def _crossfade_timeline() -> timeline_schema.Timeline:
+    clips = [
+        timeline_schema.Clip(
+            source=timeline_schema.ClipSource(asset_id="a", in_s=0, out_s=4),
+            record_start_s=0,
+        ),
+        timeline_schema.Clip(
+            source=timeline_schema.ClipSource(asset_id="a", in_s=10, out_s=14),
+            record_start_s=3,
+        ),
+    ]
+    clips[0].transition_out = timeline_schema.Transition(type="crossfade", duration_s=1.0)
+    timeline = timeline_schema.Timeline(
+        frame_rate=30, tracks=[timeline_schema.Track(name="V1", clips=clips)]
+    )
+    timeline_schema.validate(timeline)
+    return timeline
+
+
+def test_fcpxml_emits_transition_resource_and_spine_element():
+    xml = export.export_fcpxml(_crossfade_timeline(), {"a": "a.mp4"}, "x")
+    root = ET.fromstring(xml)
+    # One transition resource, referenced from the spine.
+    resource = root.findall("./resources/transition")
+    assert len(resource) == 1 and resource[0].get("name") == "Cross Dissolve"
+    spine_transitions = root.findall("./project/sequence/spine/transition")
+    assert len(spine_transitions) == 1
+    assert spine_transitions[0].get("ref") == resource[0].get("id")
+    # The transition starts at the second clip's record position (3s),
+    # i.e. 1s before clip A's record end (4s).
+    assert spine_transitions[0].get("offset") == "3/1s"
+    assert spine_transitions[0].get("duration") == "1/1s"
+    # Spine order: clip, transition, clip.
+    children = [child.tag for child in root.find("./project/sequence/spine")]
+    assert children == ["asset-clip", "transition", "asset-clip"]
+
+
+def test_edl_marks_crossfade_junctions():
+    edl = export.export_edl(_crossfade_timeline(), "x")
+    assert "* CROSSFADE 1.000s TO NEXT" in edl

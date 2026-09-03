@@ -124,7 +124,8 @@ def export_fcpxml(timeline: Timeline, asset_filenames: dict[str, str], name: str
 
     spine = []
     offset = 0.0
-    for clip in clips:
+    transition_count = 0
+    for i, clip in enumerate(clips):
         duration = clip.source.out_s - clip.source.in_s
         default_name = asset_filenames.get(clip.source.asset_id, clip.id)
         spine.append(
@@ -133,7 +134,16 @@ def export_fcpxml(timeline: Timeline, asset_filenames: dict[str, str], name: str
             f'offset="{_rational(offset, fps)}" start="{_rational(clip.source.in_s, fps)}" '
             f'duration="{_rational(duration, fps)}" />'
         )
-        offset += duration
+        offset = clip.record_start_s + duration
+        if clip.transition_out is not None and i + 1 < len(clips):
+            transition_count += 1
+            rid = f"rt{transition_count}"
+            resources.append(f'<transition id="{rid}" name="Cross Dissolve" type="Video" />')
+            spine.append(
+                f'<transition ref="{rid}" '
+                f'offset="{_rational(offset - clip.transition_out.duration_s, fps)}" '
+                f'duration="{_rational(clip.transition_out.duration_s, fps)}" />'
+            )
 
     return (
         '<?xml version="1.0" encoding="UTF-8"?>\n'
@@ -154,7 +164,9 @@ def export_edl(timeline: Timeline, name: str, fps: float = 30.0) -> str:
 
     Multi-source EDLs use a reel name per event — the first 8 characters
     of the asset id (the CMX3600 reel field is 8 characters); a
-    single-source timeline keeps the conventional AX reel.
+    single-source timeline keeps the conventional AX reel. Crossfades are
+    marked with a comment at the junction: full CMX3600 dissolve event
+    pairs are a deferred refinement (lossy, documented in the plan).
     """
     clips = _video_clips(timeline)
     ids = _asset_ids(timeline)
@@ -172,6 +184,11 @@ def export_edl(timeline: Timeline, name: str, fps: float = 30.0) -> str:
         comment = clip.reason or clip.name
         if comment:
             lines.append(f"* FROM CLIP NAME: {comment}")
+        if clip.transition_out is not None:
+            lines.append(
+                f"* CROSSFADE {clip.transition_out.duration_s:.3f}s TO NEXT "
+                "(exported as a cut — see FCPXML for the dissolve)"
+            )
         lines.append("")
         record += duration
     return "\n".join(lines)
