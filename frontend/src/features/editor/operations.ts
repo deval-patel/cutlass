@@ -185,6 +185,72 @@ export function appendClip(
   return withClips(timeline, [...videoClips(timeline), clip])
 }
 
+/** Add (or replace) a crossfade at the clip's outgoing junction: the next
+ * enabled clip shifts left to overlap by the transition duration. Returns
+ * null when there is no following clip or the duration doesn't fit. */
+export function addTransition(
+  timeline: EditorTimeline,
+  id: string,
+  durationS = 0.5,
+): EditorTimeline | null {
+  const clips = videoClips(timeline)
+  const idx = clips.findIndex((c) => c.id === id)
+  if (idx < 0 || idx === clips.length - 1) return null
+  const a = clips[idx]
+  const b = clips[idx + 1]
+  const spanA = clipEnd(a) - a.record_start_s
+  const spanB = b.source.out_s - b.source.in_s
+  const d = Math.min(durationS, spanA - 0.1, spanB - 0.1)
+  if (d <= 0) return null
+  const nextClips = clips.map((c) => ({ ...c }))
+  nextClips[idx] = {
+    ...a,
+    transition_out: { type: 'crossfade', duration_s: round3(d) },
+  }
+  nextClips[idx + 1] = { ...b, record_start_s: clipEnd(a) - d }
+  return withClips(timeline, nextClips)
+}
+
+/** Remove the clip's outgoing crossfade: the next clip shifts right back
+ * to a hard cut. Returns null when there is no transition. */
+export function removeTransition(timeline: EditorTimeline, id: string): EditorTimeline | null {
+  const clips = videoClips(timeline)
+  const idx = clips.findIndex((c) => c.id === id)
+  if (idx < 0 || !clips[idx].transition_out || idx === clips.length - 1) return null
+  const a = clips[idx]
+  const d = a.transition_out!.duration_s
+  const nextClips = clips.map((c) => ({ ...c }))
+  nextClips[idx] = { ...a, transition_out: null }
+  nextClips[idx + 1] = {
+    ...nextClips[idx + 1],
+    record_start_s: nextClips[idx + 1].record_start_s + d,
+  }
+  return withClips(timeline, nextClips)
+}
+
+/** Invariant oracle mirroring the backend validate(): no junction may
+ * overlap without a matching transition, and transitions must fit. */
+export function violatesCrossfadeRules(timeline: EditorTimeline): boolean {
+  const clips = videoClips(timeline)
+  for (let i = 0; i < clips.length - 1; i++) {
+    const a = clips[i]
+    const b = clips[i + 1]
+    const overlap = clipEnd(a) - b.record_start_s
+    const transition = a.transition_out
+    if (overlap <= EPS) continue
+    if (!transition) return true
+    const spanA = a.source.out_s - a.source.in_s
+    const spanB = b.source.out_s - b.source.in_s
+    if (Math.abs(overlap - transition.duration_s) > 1e-6) return true
+    if (transition.duration_s >= Math.min(spanA, spanB) - 1e-6) return true
+  }
+  return clips[clips.length - 1]?.transition_out != null
+}
+
+function round3(n: number): number {
+  return Math.round(n * 1000) / 1000
+}
+
 /** Delete clips; `ripple` closes the gap left behind. */
 export function deleteClips(
   timeline: EditorTimeline,

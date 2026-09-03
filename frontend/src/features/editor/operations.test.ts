@@ -181,3 +181,48 @@ describe('appendClip (asset browser)', () => {
     expect(ranges(out)).toEqual([[0, 12]])
   })
 })
+
+describe('transitions (crossfades)', () => {
+  it('add shifts the next clip left to create the overlap', () => {
+    const t = FRESH() // a: 0-20 (source 10-30), b: 20-40 (source 40-60)
+    const out = ops.addTransition(t, 'a', 1)!
+    expect(ranges(out)).toEqual([
+      [0, 20],
+      [19, 39], // b overlapped by 1s
+    ])
+    const clips = ops.videoClips(out)
+    expect(clips[0].transition_out).toEqual({ type: 'crossfade', duration_s: 1 })
+  })
+
+  it('add clamps the duration to what the clips can afford', () => {
+    const t = FRESH()
+    const out = ops.addTransition(t, 'a', 50)! // clamp to min(span)-0.1 = 19.9s
+    const d = ops.videoClips(out)[0].transition_out!.duration_s
+    expect(d).toBeLessThan(20)
+    expect(ops.violatesCrossfadeRules(out)).toBe(false)
+  })
+
+  it('remove shifts the next clip back to a hard cut', () => {
+    const t = ops.addTransition(FRESH(), 'a', 1)!
+    const out = ops.removeTransition(t, 'a')!
+    expect(ranges(out)).toEqual([
+      [0, 20],
+      [20, 40],
+    ])
+    expect(ops.videoClips(out)[0].transition_out ?? null).toBeNull()
+    expect(ops.removeTransition(out, 'a')).toBeNull()
+  })
+
+  it('add on the last clip is rejected', () => {
+    expect(ops.addTransition(FRESH(), 'b', 1)).toBeNull()
+  })
+
+  it('server-side invariants hold: exact overlap, fits both clips', () => {
+    // The backend validates the same rules; mirror them here for the store.
+    const t = ops.addTransition(FRESH(), 'a', 1)!
+    const clips = ops.videoClips(t)
+    const [a, b] = clips
+    const overlap = ops.clipEnd(a) - b.record_start_s
+    expect(overlap).toBeCloseTo(a.transition_out!.duration_s)
+  })
+})

@@ -33,6 +33,8 @@ interface EditorState {
   trim(id: string, edge: 'in' | 'out', time: number, ripple: boolean): void
   move(id: string, start: number): void
   append(source: TimelineClip['source'], name?: string): void
+  addTransition(id: string, durationS?: number): void
+  removeTransition(id: string): void
   split(id: string, time: number): void
   remove(ids: string[], ripple: boolean): void
 }
@@ -110,6 +112,14 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
   append(source, name) {
     get().commit(ops.appendClip(get().timeline, source, name))
+  },
+
+  addTransition(id, durationS = 0.5) {
+    get().commit(ops.addTransition(get().timeline, id, durationS))
+  },
+
+  removeTransition(id) {
+    get().commit(ops.removeTransition(get().timeline, id))
   },
 
   trim(id, edge, time, ripple) {

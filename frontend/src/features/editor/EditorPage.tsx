@@ -32,8 +32,13 @@ export default function EditorPage() {
   const setZoom = useEditorStore((s) => s.setZoom)
   const playhead = useEditorStore((s) => s.playhead)
   const selection = useEditorStore((s) => s.selection)
+  const selectedClip = ops
+    .videoClips(useEditorStore((s) => s.timeline))
+    .find((c) => c.id === selection[0])
   const pps = useEditorStore((s) => s.pixelsPerSecond)
   const append = useEditorStore((s) => s.append)
+  const addTransition = useEditorStore((s) => s.addTransition)
+  const removeTransition = useEditorStore((s) => s.removeTransition)
 
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const monitor = useRef<MonitorHandle | null>(null)
@@ -107,11 +112,14 @@ export default function EditorPage() {
         setPlayhead(ops.duration(state.timeline))
       } else if (e.key === 'Escape') {
         select([])
+      } else if (e.key.toLowerCase() === 'c' && selected && selectedClip) {
+        if (selectedClip.transition_out) removeTransition(selectedClip.id)
+        else addTransition(selectedClip.id)
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [split, remove, undo, redo, setPlayhead, select])
+  }, [split, remove, undo, redo, setPlayhead, select, addTransition, removeTransition, selectedClip])
 
   const peaks = usePeaks(primary?.id)
 

@@ -8,6 +8,11 @@ export interface ClipSource {
   out_s: number
 }
 
+export interface Transition {
+  type: 'crossfade'
+  duration_s: number
+}
+
 export interface TimelineClip {
   id: string
   name: string
@@ -16,6 +21,8 @@ export interface TimelineClip {
   reason: string
   confidence: number
   enabled: boolean
+  /** Crossfade at this clip's outgoing junction (Plan 4 phase 2). */
+  transition_out?: Transition | null
 }
 
 export interface TimelineTrack {
