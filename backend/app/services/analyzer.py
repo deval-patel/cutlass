@@ -350,7 +350,8 @@ def run_render(asset_id: str) -> None:
             )
             for clip in clips
         ]
-        ffmpeg.render_timeline(specs, render_path(asset_id))
+        fps = document.frame_rate or (asset.meta.fps if asset.meta else None)
+        ffmpeg.render_timeline(specs, render_path(asset_id), fps=fps)
         assets_repo.set_status(asset_id, "rendered")
     except Exception as exc:
         logger.exception("render failed for asset %s", asset_id)

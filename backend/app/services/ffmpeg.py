@@ -101,7 +101,9 @@ def extract_audio(
 
 
 def render_timeline(
-    clip_specs: list[tuple[Path, float, float, float | None]], out_path: Path
+    clip_specs: list[tuple[Path, float, float, float | None]],
+    out_path: Path,
+    fps: float | None = None,
 ) -> None:
     """Render a timeline: trim each clip and join clips in record order.
 
@@ -143,13 +145,20 @@ def render_timeline(
                 raise RuntimeError(f"clip {clip_index} has an empty source range")
             input_idx = input_index[str(video)]
             v_label, a_label = f"v{clip_index}", f"a{clip_index}"
-            filters.append(
+            # xfade requires constant-frame-rate inputs — normalize with
+            # fps= after trim (frame-rate metadata is lost by setpts).
+            video_chain = (
                 f"[{input_idx}:v]trim=start={source_in:.3f}:end={source_out:.3f},"
-                f"setpts=PTS-STARTPTS[{v_label}]"
+                f"setpts=PTS-STARTPTS"
             )
+            if fps:
+                video_chain += f",fps={fps}"
+            filters.append(f"{video_chain}[{v_label}]")
+            # Normalize audio too: acrossfade needs matching rates/layout.
             filters.append(
                 f"[{input_idx}:a]atrim=start={source_in:.3f}:end={source_out:.3f},"
-                f"asetpts=PTS-STARTPTS[{a_label}]"
+                f"asetpts=PTS-STARTPTS,aresample=48000,"
+                f"aformat=channel_layouts=stereo[{a_label}]"
             )
             video_labels.append(v_label)
             audio_labels.append(a_label)
