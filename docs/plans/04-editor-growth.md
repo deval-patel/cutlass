@@ -24,9 +24,11 @@ Crossfades between adjacent clips on a track, end to end:
   MVP semantics).
 
 **Verified by**: schema validation tests (accept exact-D overlap, reject
-mismatched/too-long), render integration test (two 4s clips + 1s crossfade
-→ 7s output, ffprobe-asserted), export tests, store ops tests; Docker E2E
-renders a crossfade timeline.
+mismatched/too-long/trailing), render integration tests (two 4s clips +
+1s crossfade → 7s ffprobe-asserted output; mixed runs → 11s), export
+tests (FCPXML transition resource/spine element, EDL junction comment),
+store ops tests (shift-on-add, restore-on-remove, clamping, oracle);
+Docker E2E renders a crossfade timeline through the API.
 
 ## Phase 1 audit: multi-asset timelines (Sept 2026)
 
