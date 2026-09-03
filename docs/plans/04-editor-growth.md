@@ -1,6 +1,32 @@
 # Plan 4 — Editor Growth + Style v2
 
-**Status: in-progress — phase 1 ✅ (multi-asset timelines, Sept 2026); remaining features queued.** Depends on Plans 1–3. Feature-sized chunks, each independently shippable.
+**Status: in-progress — phase 1 ✅ (multi-asset), phase 2 ✅ (transitions), Sept 2026; remaining features queued.** Depends on Plans 1–3. Feature-sized chunks, each independently shippable.
+
+## Phase 2 audit: transitions (Sept 2026)
+
+Crossfades between adjacent clips on a track, end to end:
+
+- **Schema**: `clip.transition_out = {type, duration_s}` — a transition on
+  the LEFT clip of a junction. Validation allows the resulting overlap
+  exactly when it equals the transition duration and the duration fits
+  inside both clips; every other overlap is still rejected.
+- **Render**: clips group into runs joined by transitions; within a run the
+  video chains through `xfade` (offset = junction record position relative
+  to the run start) and audio chains through `acrossfade`; runs concat.
+  Total duration = sum(spans) − sum(transition durations) — parity tested.
+- **Exports**: FCPXML emits a `<transition>` resource + spine element per
+  junction (XML-valid; NLE import remains the documented manual check).
+  EDL marks junctions with a `* CROSSFADE` comment — full CMX3600 dissolve
+  event pairs are deferred (lossy, documented).
+- **Editor**: "crossfade" toggle on the selected clip's outgoing junction —
+  adding shifts the next clip left to create the overlap (undoable);
+  subsequent trims that break the overlap drop the transition (documented
+  MVP semantics).
+
+**Verified by**: schema validation tests (accept exact-D overlap, reject
+mismatched/too-long), render integration test (two 4s clips + 1s crossfade
+→ 7s output, ffprobe-asserted), export tests, store ops tests; Docker E2E
+renders a crossfade timeline.
 
 ## Phase 1 audit: multi-asset timelines (Sept 2026)
 
