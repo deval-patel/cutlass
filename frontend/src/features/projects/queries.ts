@@ -102,6 +102,20 @@ export function usePeaks(assetId: string | undefined) {
   })
 }
 
+/** Re-draft every analyzed asset in the project with one style. */
+export function useProjectRedraft(projectId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (body: { preset_id: string; user_brief: string }) =>
+      jsonFetch<{ status: string; assets: number }>(`/api/v1/projects/${projectId}/redraft`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.project(projectId) }),
+  })
+}
+
 export function useDeleteProject() {
   const queryClient = useQueryClient()
   return useMutation({

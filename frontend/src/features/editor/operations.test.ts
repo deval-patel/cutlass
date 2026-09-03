@@ -163,3 +163,21 @@ describe('store commands + undo/redo', () => {
     expect(snapThreshold(400)).toBeCloseTo(0.02) // clamped low bound
   })
 })
+
+describe('appendClip (asset browser)', () => {
+  it('appends a full-source clip at the timeline end', () => {
+    const t = FRESH()
+    const out = ops.appendClip(t, { asset_id: 'a2', in_s: 0, out_s: 45 }, 'day2.mp4')!
+    const clips = ops.videoClips(out)
+    expect(clips).toHaveLength(3)
+    expect(ranges(out)[2]).toEqual([40, 85])
+    expect(clips[2].source.asset_id).toBe('a2')
+    expect(clips[2].reason).toBe('added from browser')
+    expect(new Set(clips.map((c) => c.id)).size).toBe(3)
+  })
+
+  it('appends onto an empty timeline', () => {
+    const out = ops.appendClip(timeline([]), { asset_id: 'a2', in_s: 0, out_s: 12 }, 'x.mp4')!
+    expect(ranges(out)).toEqual([[0, 12]])
+  })
+})

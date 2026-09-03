@@ -4,8 +4,9 @@ import ProgramMonitor, { type MonitorHandle } from './ProgramMonitor'
 import Timeline from './Timeline'
 import * as ops from './operations'
 import { useEditorStore } from './store'
-import { usePeaks, useProject } from '../projects/queries'
+import { usePeaks, useProject, useProjectRedraft } from '../projects/queries'
 import { jsonFetch } from '../../lib/api'
+import { useQuery } from '@tanstack/react-query'
 import { fmtSeconds } from '../../lib/status'
 
 const AUTOSAVE_DEBOUNCE_MS = 1200
@@ -32,6 +33,7 @@ export default function EditorPage() {
   const playhead = useEditorStore((s) => s.playhead)
   const selection = useEditorStore((s) => s.selection)
   const pps = useEditorStore((s) => s.pixelsPerSecond)
+  const append = useEditorStore((s) => s.append)
 
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const monitor = useRef<MonitorHandle | null>(null)
@@ -39,10 +41,16 @@ export default function EditorPage() {
 
   const fps = timeline?.document.frame_rate ?? primary?.meta?.fps ?? 30
   const loaded = useRef(false)
+  const loadedVersion = useRef<number | null>(null)
   useEffect(() => {
-    if (timeline && !loaded.current) {
+    if (!timeline) return
+    // First load, or a server-side version change (e.g. a project redraft
+    // landed): replace the editor document. Redrafts are explicit user
+    // actions, so local unsaved edits yield to the new draft.
+    if (!loaded.current || loadedVersion.current !== timeline.version) {
       load(timeline.document as never)
       loaded.current = true
+      loadedVersion.current = timeline.version
     }
   }, [timeline, load])
 
@@ -150,12 +158,7 @@ export default function EditorPage() {
         </span>
       </p>
 
-      <ProgramMonitor
-        timeline={storeTimeline}
-        sourceUrl={`/api/v1/assets/${primary?.id ?? ''}/source`}
-        fps={fps}
-        onReady={monitorRef}
-      />
+      <ProgramMonitor timeline={storeTimeline} fps={fps} onReady={monitorRef} />
       <p className="muted monitor-readout">
         {fmtSeconds(playhead)} / {fmtSeconds(total)}
         {' · '}
@@ -197,7 +200,35 @@ export default function EditorPage() {
         </button>
       </p>
 
-      <Timeline timeline={storeTimeline} peaks={peaks.data ?? null} />
+      <div className="editor-grid">
+        <div className="asset-browser">
+          <div className="muted">Assets in this project</div>
+          <ul className="asset-list">
+            {(detail.assets ?? []).map((a) => (
+              <li key={a.id} className={a.status !== 'ready' ? 'unavailable' : undefined}>
+                <div>
+                  <strong>{a.filename}</strong>
+                  <div className="muted">
+                    {a.status !== 'ready' ? a.status : `${(a.meta?.duration_s ?? 0).toFixed(0)}s`}
+                    {a.style_preset !== 'default' && ` · ${a.style_preset}`}
+                  </div>
+                </div>
+                <button
+                  className="secondary"
+                  disabled={a.status !== 'ready'}
+                  onClick={() =>
+                    append({ asset_id: a.id, in_s: 0, out_s: a.meta?.duration_s ?? 0 }, a.filename)
+                  }
+                >
+                  + timeline
+                </button>
+              </li>
+            ))}
+          </ul>
+          <ProjectRedraftControl projectId={projectId} />
+        </div>
+        <Timeline timeline={storeTimeline} peaks={peaks.data ?? null} />
+      </div>
 
       <p className="muted">
         Exports: <a href={`/api/v1/projects/${projectId}/export/fcpxml`}>FCPXML</a>
@@ -208,6 +239,59 @@ export default function EditorPage() {
         {' · '}
         <a href={`/api/v1/assets/${primary?.id ?? ''}/render`}>download render</a>
       </p>
+    </div>
+  )
+}
+
+/** Project-wide style + re-draft control (restyles every analyzed asset). */
+function ProjectRedraftControl({ projectId }: { projectId: string }) {
+  const presets = useQuery({
+    queryKey: ['styles'],
+    queryFn: () =>
+      jsonFetch<Array<{ preset_id: string; name: string; pacing: string }>>('/api/v1/styles'),
+    staleTime: Infinity,
+  })
+  const redraft = useProjectRedraft(projectId)
+  const [presetId, setPresetId] = useState('default')
+  const [brief, setBrief] = useState('')
+  const [error, setError] = useState<string | null>(null)
+
+  async function go() {
+    setError(null)
+    try {
+      await redraft.mutateAsync({ preset_id: presetId, user_brief: brief })
+    } catch (exc) {
+      setError(exc instanceof Error ? exc.message : 'Re-draft failed')
+    }
+  }
+
+  return (
+    <div className="project-redraft">
+      <div className="muted">Re-draft everything</div>
+      <div className="style-row">
+        <select
+          value={presetId}
+          onChange={(e) => setPresetId(e.target.value)}
+          disabled={redraft.isPending}
+        >
+          {(presets.data ?? []).map((p) => (
+            <option key={p.preset_id} value={p.preset_id}>
+              {p.name}
+            </option>
+          ))}
+        </select>
+        <button onClick={go} disabled={redraft.isPending}>
+          {redraft.isPending ? 'Re-drafting…' : 'Re-draft all'}
+        </button>
+      </div>
+      <textarea
+        rows={2}
+        value={brief}
+        placeholder="Direction for the whole project (optional)"
+        onChange={(e) => setBrief(e.target.value)}
+        disabled={redraft.isPending}
+      />
+      {error && <p style={{ color: '#ff8f8f' }}>{error}</p>}
     </div>
   )
 }

@@ -375,3 +375,57 @@ button.icon {
 .save-error {
   color: #ff8f8f;
 }
+
+.editor-grid {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  gap: 12px;
+  align-items: start;
+}
+.asset-browser {
+  border: 1px solid #2a3040;
+  border-radius: 8px;
+  padding: 10px;
+  background: #12151d;
+}
+.asset-list {
+  list-style: none;
+  margin: 8px 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.asset-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid #2a3040;
+  border-radius: 6px;
+  background: #151922;
+}
+.asset-list li.unavailable {
+  opacity: 0.5;
+}
+.project-redraft {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid #2a3040;
+}
+.project-redraft textarea {
+  width: 100%;
+  box-sizing: border-box;
+  background: #0f1115;
+  color: #e6e8ec;
+  border: 1px solid #3a4150;
+  border-radius: 6px;
+  padding: 6px 8px;
+  resize: vertical;
+}
+@media (max-width: 900px) {
+  .editor-grid {
+    grid-template-columns: 1fr;
+  }
+}

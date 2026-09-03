@@ -166,6 +166,25 @@ export function splitClip(
   return withClips(timeline, [...clips.slice(0, idx), left, right, ...clips.slice(idx + 1)])
 }
 
+/** Append a clip spanning a whole source range at the timeline end. */
+export function appendClip(
+  timeline: EditorTimeline,
+  source: TimelineClip['source'],
+  name = '',
+): EditorTimeline {
+  const end = duration(timeline)
+  const clip: TimelineClip = {
+    id: `c${Math.random().toString(36).slice(2, 10)}`,
+    name,
+    source: { ...source },
+    record_start_s: end,
+    reason: 'added from browser',
+    confidence: 1,
+    enabled: true,
+  }
+  return withClips(timeline, [...videoClips(timeline), clip])
+}
+
 /** Delete clips; `ripple` closes the gap left behind. */
 export function deleteClips(
   timeline: EditorTimeline,

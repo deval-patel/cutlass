@@ -7,7 +7,7 @@
 
 import { create } from 'zustand'
 import * as ops from './operations'
-import type { EditorTimeline } from './types'
+import type { EditorTimeline, TimelineClip } from './types'
 
 const HISTORY_LIMIT = 100
 
@@ -32,6 +32,7 @@ interface EditorState {
 
   trim(id: string, edge: 'in' | 'out', time: number, ripple: boolean): void
   move(id: string, start: number): void
+  append(source: TimelineClip['source'], name?: string): void
   split(id: string, time: number): void
   remove(ids: string[], ripple: boolean): void
 }
@@ -105,6 +106,10 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
   setZoom(pps) {
     set({ pixelsPerSecond: Math.min(500, Math.max(1, pps)) })
+  },
+
+  append(source, name) {
+    get().commit(ops.appendClip(get().timeline, source, name))
   },
 
   trim(id, edge, time, ripple) {

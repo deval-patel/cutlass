@@ -170,11 +170,17 @@ export default function Timeline({ timeline, peaks }: TimelineProps) {
             {clips.map((clip) => {
               const len = clip.source.out_s - clip.source.in_s
               const selected = selection.includes(clip.id)
+              const hue = assetHue(clip.source.asset_id)
               return (
                 <div
                   key={clip.id}
                   className={`tl-clip${selected ? ' selected' : ''}`}
-                  style={{ left: clip.record_start_s * pps, width: Math.max(6, len * pps) }}
+                  style={{
+                    left: clip.record_start_s * pps,
+                    width: Math.max(6, len * pps),
+                    background: `hsl(${hue} 30% 18%)`,
+                    borderColor: `hsl(${hue} 45% 38%)`,
+                  }}
                   onPointerDown={(e) => onClipPointerDownCapture(e, clip, 'move')}
                   title={clip.reason || clip.name}
                 >
@@ -230,6 +236,13 @@ function drawWave(
     ctx.fillRect(x, yLo, 1, Math.max(1, yHi - yLo))
   }
   void pps
+}
+
+/** Stable per-asset hue so multi-asset timelines read at a glance. */
+function assetHue(assetId: string): number {
+  let hash = 0
+  for (let i = 0; i < assetId.length; i++) hash = (hash * 31 + assetId.charCodeAt(i)) % 360
+  return hash
 }
 
 function fmtTick(t: number, step: number): string {
