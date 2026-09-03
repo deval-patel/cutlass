@@ -100,41 +100,85 @@ def extract_audio(
     return out_path
 
 
-def render_timeline(clip_specs: list[tuple[Path, float, float]], out_path: Path) -> None:
-    """Render a timeline: trim each (video, source_in, source_out) clip and
-    concatenate in record order. One input per unique video, so multi-asset
-    timelines render exactly like single-asset ones (same duration parity).
+def render_timeline(
+    clip_specs: list[tuple[Path, float, float, float | None]], out_path: Path
+) -> None:
+    """Render a timeline: trim each clip and join clips in record order.
+
+    Each spec is (video, source_in, source_out, xfade_to_next) where
+    xfade_to_next is the crossfade duration to the FOLLOWING clip (None for
+    a hard cut). Junctions with crossfades chain through xfade/acrossfade;
+    hard-cut junctions split the timeline into runs that concat — one
+    ffmpeg input per unique video either way.
     """
     if not clip_specs:
         raise RuntimeError("no clips to render")
 
     inputs: list[Path] = []
     input_index: dict[str, int] = {}
-    for video, _, _ in clip_specs:
+    for video, _, _, _ in clip_specs:
         key = str(video)
         if key not in input_index:
             input_index[key] = len(inputs)
             inputs.append(video)
 
     filters: list[str] = []
-    concat_refs: list[str] = []
-    for j, (video, source_in, source_out) in enumerate(clip_specs):
-        if source_out - source_in <= 0:
-            raise RuntimeError(f"clip {j} has an empty source range")
-        input_idx = input_index[str(video)]
-        filters.append(
-            f"[{input_idx}:v]trim=start={source_in:.3f}:end={source_out:.3f},"
-            f"setpts=PTS-STARTPTS[v{j}]"
-        )
-        filters.append(
-            f"[{input_idx}:a]atrim=start={source_in:.3f}:end={source_out:.3f},"
-            f"asetpts=PTS-STARTPTS[a{j}]"
-        )
-        concat_refs.append(f"[v{j}][a{j}]")
 
-    graph = (
-        ";".join(filters) + f";{''.join(concat_refs)}concat=n={len(clip_specs)}:v=1:a=1[v][aout]"
-    )
+    # Group clips into runs joined by crossfades (a run ends at a hard cut).
+    runs: list[list[tuple[Path, float, float, float | None]]] = [[clip_specs[0]]]
+    for spec in clip_specs[1:]:
+        if runs[-1][-1][3] is not None:
+            runs[-1].append(spec)
+        else:
+            runs.append([spec])
+
+    run_labels: list[tuple[str, str]] = []
+    clip_index = 0
+    for run in runs:
+        video_labels: list[str] = []
+        audio_labels: list[str] = []
+        run_start = run[0][1]
+        for video, source_in, source_out, _xfade in run:
+            if source_out - source_in <= 0:
+                raise RuntimeError(f"clip {clip_index} has an empty source range")
+            input_idx = input_index[str(video)]
+            v_label, a_label = f"v{clip_index}", f"a{clip_index}"
+            filters.append(
+                f"[{input_idx}:v]trim=start={source_in:.3f}:end={source_out:.3f},"
+                f"setpts=PTS-STARTPTS[{v_label}]"
+            )
+            filters.append(
+                f"[{input_idx}:a]atrim=start={source_in:.3f}:end={source_out:.3f},"
+                f"asetpts=PTS-STARTPTS[{a_label}]"
+            )
+            video_labels.append(v_label)
+            audio_labels.append(a_label)
+            clip_index += 1
+
+        # Chain crossfades within the run (video xfade + audio acrossfade).
+        acc = video_labels[0]
+        acc_a = audio_labels[0]
+        for k in range(1, len(run)):
+            xfade = run[k - 1][3]
+            offset = run[k][1] - run_start
+            x_out, ax_out = f"xv{clip_index}_{k}", f"xa{clip_index}_{k}"
+            filters.append(
+                f"[{acc}][{video_labels[k]}]xfade=transition=fade:"
+                f"duration={xfade:.3f}:offset={offset:.3f}[{x_out}]"
+            )
+            filters.append(f"[{acc_a}][{audio_labels[k]}]acrossfade=d={xfade:.3f}[{ax_out}]")
+            acc, acc_a = x_out, ax_out
+
+        run_labels.append((acc, acc_a))
+
+    if len(run_labels) == 1:
+        v_out, a_out = run_labels[0]
+    else:
+        concat_refs = "".join(f"[{v}][{a}]" for v, a in run_labels)
+        filters.append(f"{concat_refs}concat=n={len(run_labels)}:v=1:a=1[vout][aout]")
+        v_out, a_out = "vout", "aout"
+
+    graph = ";".join(filters)
 
     args = ["ffmpeg", "-y"]
     for video in inputs:
@@ -143,9 +187,9 @@ def render_timeline(clip_specs: list[tuple[Path, float, float]], out_path: Path)
         "-filter_complex",
         graph,
         "-map",
-        "[v]",
+        f"[{v_out}]",
         "-map",
-        "[aout]",
+        f"[{a_out}]",
         "-c:v",
         "libx264",
         "-preset",

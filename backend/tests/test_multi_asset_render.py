@@ -53,7 +53,7 @@ def test_render_timeline_concatenates_multiple_assets(tmp_path: Path):
     _make_clip(blue, 3, "blue")
 
     # 2s of red, 2s of blue, 1s of red again — spans two inputs.
-    specs = [(red, 0.0, 2.0), (blue, 0.0, 2.0), (red, 2.0, 3.0)]
+    specs = [(red, 0.0, 2.0, None), (blue, 0.0, 2.0, None), (red, 2.0, 3.0, None)]
     out = tmp_path / "final.mp4"
     ffmpeg.render_timeline(specs, out)
 
@@ -65,6 +65,38 @@ def test_render_timeline_requires_clips(tmp_path: Path):
 
     with pytest.raises(RuntimeError, match="no clips"):
         ffmpeg.render_timeline([], tmp_path / "x.mp4")
+
+
+def test_render_timeline_crossfade_shortens_total(tmp_path: Path):
+    from app.services import ffmpeg
+
+    red, blue = tmp_path / "xred.mp4", tmp_path / "xblue.mp4"
+    _make_clip(red, 4, "red")
+    _make_clip(blue, 4, "blue")
+
+    # 4s + 4s joined by a 1s crossfade -> 7s output (Plan 3 parity: the
+    # record positions overlap by the transition duration).
+    specs = [(red, 0.0, 4.0, 1.0), (blue, 0.0, 4.0, None)]
+    out = tmp_path / "faded.mp4"
+    ffmpeg.render_timeline(specs, out)
+
+    assert probe_duration(out) == pytest.approx(7.0, abs=0.15)
+
+
+def test_render_timeline_mixed_runs(tmp_path: Path):
+    from app.services import ffmpeg
+
+    red, blue, green = tmp_path / "mred.mp4", tmp_path / "mblue.mp4", tmp_path / "mgreen.mp4"
+    _make_clip(red, 4, "red")
+    _make_clip(blue, 4, "blue")
+    _make_clip(green, 4, "green")
+
+    # crossfade a+b (1s), hard cut to c: 4 + 4 - 1 + 4 = 11s.
+    specs = [(red, 0.0, 4.0, 1.0), (blue, 0.0, 4.0, None), (green, 0.0, 4.0, None)]
+    out = tmp_path / "mixed.mp4"
+    ffmpeg.render_timeline(specs, out)
+
+    assert probe_duration(out) == pytest.approx(11.0, abs=0.15)
 
 
 def test_multi_asset_project_render_parity(client, test_video):

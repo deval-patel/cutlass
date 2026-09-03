@@ -342,7 +342,12 @@ def run_render(asset_id: str) -> None:
         if not clips:
             raise RuntimeError("timeline has no enabled clips to render")
         specs = [
-            (source_path(clip.source.asset_id), clip.source.in_s, clip.source.out_s)
+            (
+                source_path(clip.source.asset_id),
+                clip.source.in_s,
+                clip.source.out_s,
+                clip.transition_out.duration_s if clip.transition_out else None,
+            )
             for clip in clips
         ]
         ffmpeg.render_timeline(specs, render_path(asset_id))
