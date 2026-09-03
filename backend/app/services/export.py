@@ -1,10 +1,10 @@
-"""Timeline exports (Plan 3): SRT captions, FCPXML, CMX3600 EDL.
+"""Timeline exports: SRT captions, FCPXML, CMX3600 EDL.
 
-Hand-rolled generators for the single-asset cut timelines this version
-produces — no OpenTimelineIO dependency. These are the standard
-interchange targets (Resolve/Premiere/FCP import FCPXML and EDL; SRT is
-universal). Multi-asset exports arrive with Plan 4 and reuse these
-writers per track.
+Hand-rolled generators — no OpenTimelineIO dependency. These are the
+standard interchange targets (Resolve/Premiere/FCP import FCPXML and
+EDL; SRT is universal). Multi-asset timelines are first-class: FCPXML
+emits one resource per referenced asset, EDL events carry a reel name
+derived from the asset id, and SRT merges transcripts per asset.
 """
 
 import math
@@ -23,13 +23,15 @@ def _video_clips(timeline: Timeline) -> list[timeline_schema.Clip]:
     return sorted((c for c in track.clips if c.enabled), key=lambda c: c.record_start_s)
 
 
-def _require_single_asset(timeline: Timeline) -> str:
-    asset_ids = {clip.source.asset_id for clip in _video_clips(timeline)}
-    if not asset_ids:
+def _asset_ids(timeline: Timeline) -> list[str]:
+    """Unique asset ids in clip order; error when the timeline is empty."""
+    ids: list[str] = []
+    for clip in _video_clips(timeline):
+        if clip.source.asset_id not in ids:
+            ids.append(clip.source.asset_id)
+    if not ids:
         raise ValueError("timeline has no clips to export")
-    if len(asset_ids) > 1:
-        raise ValueError("multi-asset export arrives with multi-asset timelines")
-    return next(iter(asset_ids))
+    return ids
 
 
 def _tc(seconds: float, fps: float) -> str:
@@ -59,27 +61,31 @@ def _esc(text: str) -> str:
     )
 
 
-def export_srt(timeline: Timeline, transcript: list[TranscriptLine]) -> str:
+def export_srt(timeline: Timeline, transcripts: dict[str, list[TranscriptLine]]) -> str:
     """Transcript lines re-timed into record time, kept ranges only.
 
     Lines are clipped to keep-ranges and split at cuts, so no caption
-    survives inside a removed range.
+    survives inside a removed range. Assets without a transcript
+    contribute no cues.
     """
     clips = _video_clips(timeline)
-    _require_single_asset(timeline)
+    _asset_ids(timeline)
     cue_id = 0
     out: list[str] = []
-    for line in sorted(transcript, key=lambda ln: ln.start_s):
-        for clip in clips:
-            lo = max(line.start_s, clip.source.in_s)
-            hi = min(line.end_s, clip.source.out_s)
-            if hi - lo <= 0.05:
-                continue
-            shift = clip.record_start_s - clip.source.in_s
-            cue_id += 1
-            start = lo + shift
-            end = hi + shift
-            out.append(f"{cue_id}\n{_srt_time(start)} --> {_srt_time(end)}\n{line.text}\n")
+    for asset_id, transcript in transcripts.items():
+        for line in sorted(transcript, key=lambda ln: ln.start_s):
+            for clip in clips:
+                if clip.source.asset_id != asset_id:
+                    continue
+                lo = max(line.start_s, clip.source.in_s)
+                hi = min(line.end_s, clip.source.out_s)
+                if hi - lo <= 0.05:
+                    continue
+                shift = clip.record_start_s - clip.source.in_s
+                cue_id += 1
+                out.append(
+                    f"{cue_id}\n{_srt_time(lo + shift)} --> {_srt_time(hi + shift)}\n{line.text}\n"
+                )
     return "\n".join(out)
 
 
@@ -91,27 +97,39 @@ def _srt_time(seconds: float) -> str:
     return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
 
 
-def export_fcpxml(timeline: Timeline, asset_filename: str, name: str) -> str:
-    """Minimal FCPXML 1.9: one event, one spine, video-only asset cuts."""
-    _require_single_asset(timeline)
+def export_fcpxml(timeline: Timeline, asset_filenames: dict[str, str], name: str) -> str:
+    """Minimal FCPXML 1.9: one event, one spine, video-only asset cuts.
+
+    asset_filenames maps asset_id -> file name; one resource is emitted
+    per referenced asset.
+    """
     clips = _video_clips(timeline)
-    if not clips:
-        raise ValueError("timeline has no clips to export")
+    ids = _asset_ids(timeline)
     fps = timeline.frame_rate or 30.0
     total = timeline_schema.duration_s(timeline)
 
     resources = [
         f'<format id="r1" frameDuration="{_rational(1 / fps, fps)}" '
-        'name="FFVideoFormatRateUndefined" />',
-        f'<asset id="r2" name="{_esc(asset_filename)}" src="./{_esc(asset_filename)}" '
-        f'hasVideo="1" format="r1" />',
+        'name="FFVideoFormatRateUndefined" />'
     ]
+    rid_by_asset: dict[str, str] = {}
+    for i, asset_id in enumerate(ids):
+        rid = f"r{i + 2}"
+        rid_by_asset[asset_id] = rid
+        filename = asset_filenames.get(asset_id, f"{asset_id}.mp4")
+        resources.append(
+            f'<asset id="{rid}" name="{_esc(filename)}" src="./{_esc(filename)}" '
+            f'hasVideo="1" format="r1" />'
+        )
+
     spine = []
     offset = 0.0
     for clip in clips:
         duration = clip.source.out_s - clip.source.in_s
+        default_name = asset_filenames.get(clip.source.asset_id, clip.id)
         spine.append(
-            f'<asset-clip ref="r2" name="{_esc(clip.name or asset_filename)}" '
+            f'<asset-clip ref="{rid_by_asset[clip.source.asset_id]}" '
+            f'name="{_esc(clip.name or default_name)}" '
             f'offset="{_rational(offset, fps)}" start="{_rational(clip.source.in_s, fps)}" '
             f'duration="{_rational(duration, fps)}" />'
         )
@@ -132,17 +150,22 @@ def export_fcpxml(timeline: Timeline, asset_filename: str, name: str) -> str:
 
 
 def export_edl(timeline: Timeline, name: str, fps: float = 30.0) -> str:
-    """CMX3600-style EDL (video-only, one track, straight cuts)."""
-    _require_single_asset(timeline)
+    """CMX3600-style EDL (video-only, one track, straight cuts).
+
+    Multi-source EDLs use a reel name per event — the first 8 characters
+    of the asset id (the CMX3600 reel field is 8 characters); a
+    single-source timeline keeps the conventional AX reel.
+    """
     clips = _video_clips(timeline)
-    if not clips:
-        raise ValueError("timeline has no clips to export")
+    ids = _asset_ids(timeline)
+    single = len(ids) == 1
     lines = [f"TITLE: {name.upper()}", "FCM: NON-DROP FRAME", ""]
     record = 0.0
     for i, clip in enumerate(clips, start=1):
         duration = clip.source.out_s - clip.source.in_s
+        reel = "AX" if single else clip.source.asset_id[:8].upper()
         lines.append(
-            f"{i:03d}  AX       V     C        "
+            f"{i:03d}  {reel:<8} V     C        "
             f"{_tc(clip.source.in_s, fps)} {_tc(clip.source.out_s, fps)} "
             f"{_tc(record, fps)} {_tc(record + duration, fps)}"
         )

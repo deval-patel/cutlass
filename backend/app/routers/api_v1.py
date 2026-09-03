@@ -9,7 +9,7 @@ from fastapi import APIRouter, Body, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
 
-from ..models import Asset, Project, ProjectSummary
+from ..models import Asset, Project, ProjectSummary, TranscriptLine
 from ..repositories import assets as assets_repo
 from ..repositories import projects as projects_repo
 from ..repositories import timelines as timelines_repo
@@ -188,11 +188,22 @@ def export_timeline(project_id: str, fmt: str) -> Response:
 
     filename = _Path(source_asset.filename).stem or "timeline"
     if fmt == "srt":
-        asset = assets_repo.get_asset(source_asset.id)
-        lines = asset.transcript if asset and asset.transcript else []
-        payload, media = export.export_srt(document, lines), "text/plain; charset=utf-8"
+        transcripts: dict[str, list[TranscriptLine]] = {}
+        for track in document.tracks:
+            for clip in track.clips:
+                if clip.source.asset_id not in transcripts:
+                    asset = assets_repo.get_asset(clip.source.asset_id)
+                    transcripts[clip.source.asset_id] = asset.transcript if asset else []
+        payload, media = export.export_srt(document, transcripts), "text/plain; charset=utf-8"
     elif fmt == "fcpxml":
-        payload = export.export_fcpxml(document, source_asset.filename, name=project_id)
+        filenames: dict[str, str] = {}
+        for track in document.tracks:
+            for clip in track.clips:
+                if clip.source.asset_id not in filenames:
+                    asset = assets_repo.get_asset(clip.source.asset_id)
+                    if asset is not None:
+                        filenames[clip.source.asset_id] = asset.filename
+        payload = export.export_fcpxml(document, filenames, name=project_id)
         media = "application/xml; charset=utf-8"
     elif fmt == "edl":
         fps = document.frame_rate or 30.0

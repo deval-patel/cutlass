@@ -35,7 +35,7 @@ def test_edl_structure_and_timecodes():
 
 
 def test_fcpxml_is_valid_xml_with_expected_clips():
-    xml = export.export_fcpxml(_timeline(), "day1.mp4", "trip")
+    xml = export.export_fcpxml(_timeline(), {"a1": "day1.mp4"}, "trip")
     root = ET.fromstring(xml)
     assert root.tag == "fcpxml"
     clips = root.findall("./project/sequence/spine/asset-clip")
@@ -54,7 +54,7 @@ def test_fcpxml_is_valid_xml_with_expected_clips():
 
 def test_fcpxml_total_duration_matches_timeline():
     timeline = _timeline()
-    xml = export.export_fcpxml(timeline, "day1.mp4", "trip")
+    xml = export.export_fcpxml(timeline, {"a1": "day1.mp4"}, "trip")
     root = ET.fromstring(xml)
     sequence = root.find("./project/sequence")
     fps = 30
@@ -70,7 +70,7 @@ def test_srt_retimes_into_record_time_and_clips_at_cuts():
         TranscriptLine(start_s=100.0, end_s=140.0, text="fully removed"),
         TranscriptLine(start_s=240.0, end_s=250.0, text="inside second clip"),
     ]
-    srt = export.export_srt(timeline, transcript)
+    srt = export.export_srt(timeline, {"a1": transcript})
 
     assert "1\n00:00:00,000 --> 00:00:08,000\ncrosses the cut" in srt
     # 240s sits 4s into clip 2 (record start 28s) → 32s.
@@ -87,7 +87,7 @@ def test_exports_reject_empty_and_multi_asset_timelines():
     with pytest.raises(ValueError, match="no clips"):
         export.export_fcpxml(empty, "a.mp4", "x")
     with pytest.raises(ValueError, match="no clips"):
-        export.export_srt(empty, [])
+        export.export_srt(empty, {})
 
     multi = timeline_schema.Timeline(
         tracks=[
@@ -106,10 +106,33 @@ def test_exports_reject_empty_and_multi_asset_timelines():
         ]
     )
     timeline_schema.validate(multi)
-    with pytest.raises(ValueError, match="multi-asset"):
-        export.export_edl(multi, "x")
-    with pytest.raises(ValueError, match="multi-asset"):
-        export.export_fcpxml(multi, "x", "x")
+    # Multi-asset is supported: reels per event, one resource per asset.
+    edl = export.export_edl(multi, "x")
+    assert any(ln.startswith("001  ") and "A" in ln.split()[1] for ln in edl.splitlines())
+    xml = export.export_fcpxml(multi, {"a": "a.mp4", "b": "b.mp4"}, "x")
+    assert xml.count("<asset ") == 2
+
+
+def test_multi_asset_edl_uses_reel_names_per_asset():
+    multi = timeline_schema.Timeline(
+        tracks=[
+            timeline_schema.Track(
+                name="V1",
+                clips=[
+                    timeline_schema.Clip(
+                        source=timeline_schema.ClipSource(asset_id="abcdefghij", in_s=0, out_s=5)
+                    ),
+                    timeline_schema.Clip(
+                        source=timeline_schema.ClipSource(asset_id="zzzzzzzzzz", in_s=0, out_s=5),
+                        record_start_s=5,
+                    ),
+                ],
+            )
+        ]
+    )
+    edl = export.export_edl(multi, "reels")
+    reels = [ln.split()[1] for ln in edl.splitlines() if ln[:3].isdigit()]
+    assert reels == ["ABCDEFGH", "ZZZZZZZZ"]
 
 
 def test_export_endpoints_roundtrip(client, test_video):
