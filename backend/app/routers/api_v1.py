@@ -13,7 +13,7 @@ from ..models import Asset, Project, ProjectSummary
 from ..repositories import assets as assets_repo
 from ..repositories import projects as projects_repo
 from ..repositories import timelines as timelines_repo
-from ..services import analyzer
+from ..services import analyzer, peaks
 from ..services.ingest import ingest_upload
 from ..services.queue import get_queue
 from ..styles import presets
@@ -171,6 +171,17 @@ def get_source(asset_id: str) -> FileResponse:
     if not path.exists():
         raise HTTPException(404, "source not found")
     return FileResponse(path, media_type="video/mp4")
+
+
+@router.get("/assets/{asset_id}/peaks")
+def get_asset_peaks(asset_id: str) -> dict[str, Any]:
+    """Waveform min/max buckets (~100 ms each), computed once and cached."""
+    if assets_repo.get_asset(asset_id) is None:
+        raise HTTPException(404, "asset not found")
+    try:
+        return peaks.get_peaks(asset_id)
+    except RuntimeError as exc:
+        raise HTTPException(422, str(exc)) from exc
 
 
 @router.get("/assets/{asset_id}/render")
