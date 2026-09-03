@@ -27,6 +27,17 @@ class ClipSource(BaseModel):
     out_s: float
 
 
+class Transition(BaseModel):
+    """A transition at the outgoing junction of a clip (Plan 4 phase 2).
+
+    The next enabled clip on the track must overlap this clip's record end
+    by exactly ``duration_s`` — the render crossfades across that overlap.
+    """
+
+    type: Literal["crossfade"] = "crossfade"
+    duration_s: float = Field(gt=0, le=10.0)
+
+
 class Clip(BaseModel):
     id: str = Field(default_factory=lambda: uuid.uuid4().hex[:12])
     name: str = ""
@@ -36,6 +47,7 @@ class Clip(BaseModel):
     reason: str = ""
     confidence: float = Field(default=1.0, ge=0.0, le=1.0)
     enabled: bool = True
+    transition_out: Transition | None = None
 
 
 class Track(BaseModel):
@@ -99,24 +111,51 @@ def validate(timeline: Timeline) -> None:
 
     seen_clip_ids: set[str] = set()
     for track in timeline.tracks:
-        ordered: list[tuple[float, float]] = []
+        enabled: list[Clip] = sorted(
+            (c for c in track.clips if c.enabled),
+            key=lambda c: c.record_start_s,
+        )
         for clip in track.clips:
             if clip.id in seen_clip_ids:
                 raise ValueError(f"duplicate clip id {clip.id!r}")
             seen_clip_ids.add(clip.id)
             if clip.source.out_s <= clip.source.in_s:
                 raise ValueError(f"clip {clip.id!r}: source range is empty")
-            if not clip.enabled:
+
+        # Overlap rule: adjacent enabled clips may overlap only by exactly
+        # the left clip's transition duration (a crossfade junction), and
+        # the transition must fit inside both clips.
+        for a, b in pairwise(enabled):
+            end_a = a.record_start_s + (a.source.out_s - a.source.in_s)
+            span_a = a.source.out_s - a.source.in_s
+            span_b = b.source.out_s - b.source.in_s
+            overlap = end_a - b.record_start_s
+            if overlap <= 1e-9:
                 continue
-            ordered.append(
-                (clip.record_start_s, clip.record_start_s + (clip.source.out_s - clip.source.in_s))
-            )
-        ordered.sort()
-        for (_, end_a), (start_b, _) in pairwise(ordered):
-            if start_b < end_a - 1e-9:
+            transition = a.transition_out
+            if transition is None:
                 raise ValueError(
-                    f"track {track.name!r}: clips overlap at record time {start_b:.3f}s"
+                    f"track {track.name!r}: clips overlap at record time "
+                    f"{b.record_start_s:.3f}s without a transition"
                 )
+            if abs(overlap - transition.duration_s) > 1e-6:
+                raise ValueError(
+                    f"track {track.name!r}: junction {a.id!r}→{b.id!r} overlaps by "
+                    f"{overlap:.3f}s but its transition is {transition.duration_s:.3f}s"
+                )
+            if transition.duration_s >= min(span_a, span_b) - 1e-9:
+                raise ValueError(
+                    f"track {track.name!r}: transition {transition.duration_s:.3f}s does not "
+                    f"fit inside the clips at junction {a.id!r}→{b.id!r}"
+                )
+
+        # A transition on the last enabled clip (or a disabled gap) has no
+        # junction to live on — reject rather than silently ignore.
+        if enabled and enabled[-1].transition_out is not None:
+            raise ValueError(
+                f"track {track.name!r}: clip {enabled[-1].id!r} has a transition but no "
+                "following clip"
+            )
 
 
 def from_segments(

@@ -134,3 +134,119 @@ def test_clip_confidence_bounds_enforced():
             source=schema.ClipSource(asset_id="a", in_s=0, out_s=1),
             confidence=1.5,
         )
+
+
+def _crossfade_timeline() -> schema.Timeline:
+    clips = [
+        schema.Clip(source=schema.ClipSource(asset_id="a1", in_s=0, out_s=4), record_start_s=0),
+        schema.Clip(
+            source=schema.ClipSource(asset_id="a1", in_s=10, out_s=14), record_start_s=3
+        ),  # overlaps 1s
+    ]
+    clips[0].transition_out = schema.Transition(type="crossfade", duration_s=1.0)
+    timeline = schema.Timeline(frame_rate=30, tracks=[schema.Track(name="V1", clips=clips)])
+    schema.validate(timeline)
+    return timeline
+
+
+def test_exact_transition_overlap_is_valid():
+    timeline = _crossfade_timeline()
+    # Total duration accounts for the overlap: 4 + 4 - 1.
+    assert schema.duration_s(timeline) == pytest.approx(7.0)
+
+
+def test_overlap_without_transition_is_rejected():
+    timeline = schema.Timeline(
+        tracks=[
+            schema.Track(
+                name="V1",
+                clips=[
+                    schema.Clip(source=schema.ClipSource(asset_id="a", in_s=0, out_s=4)),
+                    schema.Clip(
+                        source=schema.ClipSource(asset_id="a", in_s=10, out_s=14),
+                        record_start_s=3,
+                    ),
+                ],
+            )
+        ]
+    )
+    with pytest.raises(ValueError, match="without a transition"):
+        schema.validate(timeline)
+
+
+def test_transition_duration_must_match_the_overlap():
+    clips = [
+        schema.Clip(source=schema.ClipSource(asset_id="a", in_s=0, out_s=4)),
+        schema.Clip(
+            source=schema.ClipSource(asset_id="a", in_s=10, out_s=14), record_start_s=3.5
+        ),  # overlaps 0.5s
+    ]
+    clips[0].transition_out = schema.Transition(duration_s=1.0)
+    timeline = schema.Timeline(tracks=[schema.Track(name="V1", clips=clips)])
+    with pytest.raises(ValueError, match="overlaps by"):
+        schema.validate(timeline)
+
+
+def test_transition_must_fit_inside_both_clips():
+    clips = [
+        schema.Clip(source=schema.ClipSource(asset_id="a", in_s=0, out_s=4)),
+        schema.Clip(source=schema.ClipSource(asset_id="a", in_s=10, out_s=14), record_start_s=3.5),
+    ]
+    clips[0].transition_out = schema.Transition(duration_s=3.5)  # overlap 0.5 != 3.5
+    timeline = schema.Timeline(tracks=[schema.Track(name="V1", clips=clips)])
+    with pytest.raises(ValueError, match="overlaps by"):
+        schema.validate(timeline)
+
+    # Matching overlap but the duration eats clip b entirely (b span 4, D=4).
+    clips2 = [
+        schema.Clip(source=schema.ClipSource(asset_id="a", in_s=0, out_s=8)),
+        schema.Clip(source=schema.ClipSource(asset_id="a", in_s=10, out_s=14), record_start_s=4),
+    ]
+    clips2[0].transition_out = schema.Transition(duration_s=4.0)
+    timeline2 = schema.Timeline(tracks=[schema.Track(name="V1", clips=clips2)])
+    with pytest.raises(ValueError, match="does not fit"):
+        schema.validate(timeline2)
+
+
+def test_trailing_transition_is_rejected():
+    timeline = schema.Timeline(
+        tracks=[
+            schema.Track(
+                name="V1",
+                clips=[
+                    schema.Clip(
+                        source=schema.ClipSource(asset_id="a", in_s=0, out_s=4),
+                        transition_out=schema.Transition(duration_s=1.0),
+                    )
+                ],
+            )
+        ]
+    )
+    with pytest.raises(ValueError, match="no following clip"):
+        schema.validate(timeline)
+
+
+def test_disabled_clips_do_not_participate_in_junctions():
+    timeline = schema.Timeline(
+        tracks=[
+            schema.Track(
+                name="V1",
+                clips=[
+                    schema.Clip(
+                        source=schema.ClipSource(asset_id="a", in_s=0, out_s=4),
+                        transition_out=schema.Transition(duration_s=1.0),
+                    ),
+                    schema.Clip(
+                        source=schema.ClipSource(asset_id="a", in_s=10, out_s=14),
+                        record_start_s=3,
+                        enabled=False,
+                    ),
+                    schema.Clip(
+                        source=schema.ClipSource(asset_id="a", in_s=20, out_s=24),
+                        record_start_s=3,
+                    ),
+                ],
+            )
+        ]
+    )
+    schema.validate(timeline)  # junction lands on the next ENABLED clip
