@@ -14,6 +14,8 @@ The real travel use case — one project, many clips — is end-to-end:
 
 **Verified by**: 4 new backend test suites/cases + store tests; Docker E2E (two assets → project redraft → render parity → exports).
 
+**Behavior note (documented, deliberate):** sentence-snapping (`cut_on: sentence`) aligns cut points to transcript-line boundaries within a 1.5s tolerance in BOTH directions — with coarse single-line transcripts (e.g. DRY_RUN) this can expand cuts to the line's edges. Word-level granularity (deferred, below) tightens this.
+
 **Explicitly deferred to later Plan-4 phases** (in rough order): transitions (xfade), text/titles, music + ducking (audio tracks), caption burn-in, speed ramps (needs reworking the record-span ≡ source-span invariant — deliberately not rushed), basic color, B-roll insertion, proxies, J/L cuts + per-section pacing (style v2 timeline-aware knobs). The cross-asset JOINT selection (model choosing across all assets at once) is also deferred: phase 1 redrafts each asset independently and assembles.
 
 ## Goal
