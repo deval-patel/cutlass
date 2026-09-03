@@ -6,18 +6,19 @@ import uuid
 from typing import Any
 
 from fastapi import APIRouter, Body, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
 
 from ..models import Asset, Project, ProjectSummary
 from ..repositories import assets as assets_repo
 from ..repositories import projects as projects_repo
 from ..repositories import timelines as timelines_repo
-from ..services import analyzer, peaks
+from ..services import analyzer, export, peaks
 from ..services.ingest import ingest_upload
 from ..services.queue import get_queue
 from ..styles import presets
 from ..styles.models import PresetSummary
+from ..timelines import schema as timeline_schema
 from ..timelines.schema import Timeline, TimelineInfo, validate
 
 router = APIRouter(prefix="/api/v1")
@@ -171,6 +172,55 @@ def get_source(asset_id: str) -> FileResponse:
     if not path.exists():
         raise HTTPException(404, "source not found")
     return FileResponse(path, media_type="video/mp4")
+
+
+@router.get("/projects/{project_id}/export/{fmt}")
+def export_timeline(project_id: str, fmt: str) -> Response:
+    """Download the project timeline in an NLE-interchange format."""
+    _get_project(project_id)
+    try:
+        _, _, document = analyzer.get_or_seed_timeline(project_id)
+        source_asset = _export_asset(document)
+    except (RuntimeError, ValueError) as exc:
+        raise HTTPException(409, str(exc)) from exc
+
+    from pathlib import Path as _Path
+
+    filename = _Path(source_asset.filename).stem or "timeline"
+    if fmt == "srt":
+        asset = assets_repo.get_asset(source_asset.id)
+        lines = asset.transcript if asset and asset.transcript else []
+        payload, media = export.export_srt(document, lines), "text/plain; charset=utf-8"
+    elif fmt == "fcpxml":
+        payload = export.export_fcpxml(document, source_asset.filename, name=project_id)
+        media = "application/xml; charset=utf-8"
+    elif fmt == "edl":
+        fps = document.frame_rate or 30.0
+        payload = export.export_edl(document, name=project_id, fps=fps)
+        media = "text/plain; charset=utf-8"
+    else:
+        raise HTTPException(400, f"unknown export format '{fmt}' (srt, fcpxml, edl)")
+    return Response(
+        content=payload,
+        media_type=media,
+        headers={"Content-Disposition": f'attachment; filename="{filename}.{fmt}"'},
+    )
+
+
+def _export_asset(document: timeline_schema.Timeline) -> Asset:
+    asset_ids = {
+        clip.source.asset_id
+        for t in document.tracks
+        if t.kind == "video"
+        for clip in t.clips
+        if clip.enabled
+    }
+    if len(asset_ids) != 1:
+        raise ValueError("exports support single-asset timelines for now")
+    asset = assets_repo.get_asset(next(iter(asset_ids)))
+    if asset is None:
+        raise ValueError("timeline references a missing asset")
+    return asset
 
 
 @router.get("/assets/{asset_id}/peaks")
